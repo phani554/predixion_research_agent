@@ -14,6 +14,7 @@ Python 3.11+, Pydantic v2, OpenAI SDK pointed at any OpenAI-compatible endpoint,
 
 ## Hard rules (never break)
 - Never read, edit, or create files under `acceptance/`. Those are independent checks run by the human.
+- Never install packages or run commands system-wide. Always use the project's virtual environment (`.venv`) to install dependencies, run tests, and execute tools.
 - No new dependencies beyond `pyproject.toml` without asking.
 - No frameworks for orchestration (no LangChain/LangGraph/CrewAI). Plain functions and dataclasses.
 - Every boundary is a Pydantic model: LLM output, tool output, final answer. Never pass raw dicts across modules.
@@ -35,4 +36,4 @@ tests/        evals/        samples/        docs/
 ```
 
 ## Commands
-- `pip install -e ".[dev]"` · `pytest -q` · `python -m research_agent "question" -v` · `python evals/run_evals.py`
+- `.\.venv\Scripts\pip install -e ".[dev]"` · `.\.venv\Scripts\pytest -q` · `.\.venv\Scripts\python -m research_agent "question" -v` · `.\.venv\Scripts\python evals/run_evals.py`

@@ -7,4 +7,5 @@ description: How tests are written and run
 - Name tests after the spec scenario they prove, e.g. `test_malformed_twice_falls_back`.
 - Failure paths get tests too: timeout, retry exhaustion, malformed LLM output, blocked URL, injected instructions, empty results.
 - `pytest -q` must be green before a task is marked done.
+- Always execute tests and commands using the project's virtual environment (`.venv`), never system-wide.
 - Never modify `acceptance/`; if an acceptance check fails, fix the code or raise a spec question.

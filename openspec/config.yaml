@@ -23,6 +23,7 @@ rules:
 operations:
   apply:
     guidance:
+      - Always use the local virtual environment (`.venv`) for package installation, testing, and execution; never install or run system-wide
       - Implement one task at a time, run pytest, tick the box, then stop for human review
       - If a scenario cannot be satisfied as written, stop and propose a spec change
   archive:
