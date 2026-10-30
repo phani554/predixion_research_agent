@@ -7,6 +7,28 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Intent = Literal["comparison", "list_entities", "pros_cons", "explainer", "other"]
 ToolName = Literal["web_search", "wikipedia"]
+ToolStatus = Literal["ok", "empty", "error", "timeout", "blocked"]
+
+
+class SearchHit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    url: str
+    snippet: str
+    rank: int = 1
+
+
+class ToolResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool: str
+    status: ToolStatus
+    data: Any = None
+    error: str | None = None
+    attempts: int = 1
+    latency_ms: float = 0.0
+    cached: bool = False
 
 AnswerStatus = Literal[
     "answered",

@@ -56,6 +56,15 @@ class Settings(BaseModel):
     max_steps: int = 5
     max_tool_calls: int = 10
 
+    tool_timeout_s: float = 10.0
+    tool_max_retries: int = 2
+    max_download_bytes: int = 2 * 1024 * 1024
+    page_char_limit: int = 6000
+    search_results_per_query: int = 5
+    cache_ttl_s: int = 86400
+    cache_dir: str = ".cache"
+    faults: list[str] = Field(default_factory=list)
+
     @classmethod
     def from_env(cls, env_path: str | Path | None = ".env") -> Settings:
         """Load settings from OS environment with fallback to an optional .env file."""

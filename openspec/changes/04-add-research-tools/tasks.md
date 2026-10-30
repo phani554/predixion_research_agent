@@ -1,7 +1,7 @@
 # Tasks
 
 ## 1. Runner
-- [ ] 1.1 Add `ToolStatus`, `ToolResult`, `SearchHit` schemas and `tools/base.py` with exceptions + `run_tool` (timeout, bounded backoff retries, status mapping); verify: `test_transient_error_is_retried`, `test_retries_are_bounded`, `test_permanent_error_not_retried`, `test_hard_timeout`
+- [x] 1.1 Add `ToolStatus`, `ToolResult`, `SearchHit` schemas and `tools/base.py` with exceptions + `run_tool` (timeout, bounded backoff retries, status mapping); verify: `test_transient_error_is_retried`, `test_retries_are_bounded`, `test_permanent_error_not_retried`, `test_hard_timeout`
 
 ## 2. Tools
 - [ ] 2.1 Add `web_search` with backend fallback; verify: a `live` test returning ≥1 hit and a unit test for the all-empty case
