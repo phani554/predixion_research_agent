@@ -1,0 +1,30 @@
+schema: spec-driven
+
+context: |
+  Take-home for an AI startup: a production-minded research agent, built in 6-10 hours.
+  Python 3.11+, Pydantic v2, OpenAI-compatible LLM endpoint (Gemini free tier by default), plain-Python
+  orchestration (no agent frameworks), CLI only. Evaluators value clarity, reliability thinking, and
+  honest limitations over framework complexity or UI polish.
+  Tests must run offline with a fake LLM and fake tools.
+
+rules:
+  proposal:
+    - Keep proposals under 400 words
+    - Always state what is out of scope
+  specs:
+    - Every requirement uses MUST/SHALL and has at least one WHEN/THEN scenario
+    - Include at least one failure-path scenario per requirement where a failure is possible
+  design:
+    - Record each decision with the alternative considered and why it was rejected
+    - Name the module, function signature, and data model the implementation must use
+  tasks:
+    - Each task is small enough for one commit and ends with "verify:" naming the test or command that proves it
+
+operations:
+  apply:
+    guidance:
+      - Implement one task at a time, run pytest, tick the box, then stop for human review
+      - If a scenario cannot be satisfied as written, stop and propose a spec change
+  archive:
+    guidance:
+      - Confirm all tasks are ticked and pytest is green before archiving
