@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+Intent = Literal["comparison", "list_entities", "pros_cons", "explainer", "other"]
+ToolName = Literal["web_search", "wikipedia"]
 
 AnswerStatus = Literal[
     "answered",
@@ -35,6 +38,38 @@ class Finding(BaseModel):
     statement: str
     source_ids: list[str] = Field(..., min_length=1)
     support: Literal["supported", "weak"] = "supported"
+
+
+class PlanStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    sub_question: str
+    tool: ToolName
+    query: str = Field(..., min_length=2, max_length=200)
+    rationale: str = ""
+
+
+class ResearchPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    in_scope: bool = True
+    out_of_scope_reason: str | None = None
+    intent: Intent = "other"
+    restated_question: str = ""
+    steps: list[PlanStep] = Field(default_factory=list)
+    answer_shape: str = ""
+    assumptions: list[str] = Field(default_factory=list)
+    is_fallback: bool = False
+
+    @field_validator("steps")
+    @classmethod
+    def check_unique_step_ids(cls, steps: list[PlanStep]) -> list[PlanStep]:
+        ids = [s.id for s in steps]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"Duplicate step ids found in plan: {ids}")
+        return steps
+
 
 
 class FinalAnswer(BaseModel):

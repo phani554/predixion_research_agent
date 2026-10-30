@@ -59,6 +59,16 @@ def to_markdown(result: RunResult, verbose: bool = False) -> str:
         lines.append("")
 
     if verbose:
+        if result.plan:
+            lines.append("## Research Plan")
+            for step in result.plan:
+                step_id = getattr(step, "id", None) or (step.get("id") if isinstance(step, dict) else "?")
+                tool = getattr(step, "tool", None) or (step.get("tool") if isinstance(step, dict) else "")
+                sub_q = getattr(step, "sub_question", None) or (step.get("sub_question") if isinstance(step, dict) else "")
+                query = getattr(step, "query", None) or (step.get("query") if isinstance(step, dict) else "")
+                lines.append(f"{step_id}. **[{tool}]** {sub_q} (query: `{query}`)")
+            lines.append("")
+
         lines.append("## Run Metrics")
         lines.append(f"- Run ID: `{result.run_id}`")
         lines.append(f"- Total time: {result.metrics.total_time_s:.2f}s")

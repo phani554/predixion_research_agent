@@ -29,3 +29,25 @@ def test_run_research_catches_unexpected_exception() -> None:
         assert result.answer.status == "error"
         assert any("Simulated explosion" in lim for lim in result.answer.limitations)
 
+
+def test_run_research_out_of_scope() -> None:
+    import json
+    from research_agent.llm import FakeLLM
+
+    out_of_scope_plan = {
+        "in_scope": False,
+        "out_of_scope_reason": "Arithmetic calculation is out of scope.",
+        "intent": "other",
+        "restated_question": "What is 17 multiplied by 23?",
+        "steps": [],
+        "answer_shape": "",
+        "assumptions": [],
+        "is_fallback": False,
+    }
+    fake_llm = FakeLLM(script={"planning": [json.dumps(out_of_scope_plan)]})
+    result = run_research("What is 17 multiplied by 23?", llm=fake_llm)
+
+    assert result.answer.status == "out_of_scope"
+    assert "arithmetic" in result.answer.short_answer.lower()
+    assert result.metrics.tool_calls == 0
+

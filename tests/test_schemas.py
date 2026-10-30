@@ -61,3 +61,20 @@ def test_confidence_score_range_validation() -> None:
             next_steps=[],
         )
 
+
+def test_plan_rejects_duplicate_step_ids() -> None:
+    from research_agent.schemas import PlanStep, ResearchPlan
+
+    step1 = PlanStep(id=1, sub_question="What is X?", tool="web_search", query="X definition")
+    step2 = PlanStep(id=1, sub_question="What is Y?", tool="web_search", query="Y definition")
+
+    with pytest.raises(ValidationError):
+        ResearchPlan(steps=[step1, step2])
+
+
+def test_plan_rejects_unknown_tool() -> None:
+    from research_agent.schemas import PlanStep
+
+    with pytest.raises(ValidationError):
+        PlanStep(id=1, sub_question="Run a shell command", tool="shell", query="echo hi")
+

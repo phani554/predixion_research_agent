@@ -6,7 +6,10 @@ from typing import Any
 
 from research_agent.config import Settings
 from research_agent.guard import check_question
+from research_agent.llm import OpenAICompatLLM
+from research_agent.planner import make_plan
 from research_agent.schemas import Confidence, FinalAnswer, RunMetrics, RunResult
+from research_agent.tracing import Tracer
 
 
 def run_research(
@@ -47,7 +50,57 @@ def run_research(
                 metrics=RunMetrics(),
             )
 
-        # Pipeline stub until planning, tool execution, and synthesis stages are implemented
+        # Execute planning phase
+        active_tracer = tracer if tracer is not None else Tracer()
+        if llm is None:
+            extra_body = None
+            if cfg.llm_extra_body:
+                import json
+                try:
+                    extra_body = json.loads(cfg.llm_extra_body)
+                except Exception:
+                    extra_body = None
+            llm_client = OpenAICompatLLM(
+                base_url=cfg.llm_base_url or None,
+                api_key=cfg.llm_api_key or None,
+                model=cfg.llm_model,
+                timeout_s=cfg.request_timeout_s,
+                min_interval_s=cfg.llm_min_interval_s,
+                max_tokens=cfg.llm_max_tokens,
+                extra_body=extra_body,
+            )
+        else:
+            llm_client = llm
+
+        plan = make_plan(clean_q, llm_client, settings=cfg, tracer=active_tracer)
+
+        if not plan.in_scope:
+            return RunResult(
+                run_id=run_id,
+                answer=FinalAnswer(
+                    question=clean_q,
+                    status="out_of_scope",
+                    short_answer=plan.out_of_scope_reason or "Question is out of scope for research agent.",
+                    key_findings=[],
+                    sources=[],
+                    confidence=Confidence.low,
+                    confidence_score=0.0,
+                    confidence_reasons=["Flagged as out of scope by research planner."],
+                    limitations=[plan.out_of_scope_reason or "Question is out of scope for research agent."],
+                    assumptions=plan.assumptions,
+                    next_steps=[],
+                ),
+                plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
+                sources=[],
+                rejected=[],
+                metrics=active_tracer.metrics,
+            )
+
+        limitations = []
+        if plan.is_fallback:
+            limitations.append("Planner failed: using fallback research plan.")
+        limitations.append("Research pipeline is not implemented yet.")
+
         return RunResult(
             run_id=run_id,
             answer=FinalAnswer(
@@ -59,14 +112,14 @@ def run_research(
                 confidence=Confidence.low,
                 confidence_score=0.0,
                 confidence_reasons=["Pipeline under active development."],
-                limitations=["Research pipeline is not implemented yet."],
-                assumptions=[],
-                next_steps=["Implement planner, tool execution, and synthesis modules."],
+                limitations=limitations,
+                assumptions=plan.assumptions,
+                next_steps=["Implement tool execution and synthesis modules."],
             ),
-            plan=[],
+            plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
             sources=[],
             rejected=[],
-            metrics=RunMetrics(),
+            metrics=active_tracer.metrics,
         )
 
     except Exception as exc:
