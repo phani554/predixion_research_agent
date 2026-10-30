@@ -45,6 +45,9 @@ class Settings(BaseModel):
     llm_json_mode: bool = True
     llm_price_in_per_m: float = 0.30
     llm_price_out_per_m: float = 2.50
+    llm_max_tokens: int = 4096
+    llm_timeout_s: float = 60.0
+    llm_max_retries: int = 2
     tavily_api_key: str = ""
 
     min_question_chars: int = 8
