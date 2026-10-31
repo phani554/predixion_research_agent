@@ -24,7 +24,7 @@ def to_markdown(result: RunResult, verbose: bool = False) -> str:
         lines.append("## Key Findings")
         for finding in ans.key_findings:
             cites = ", ".join(f"[{sid}]" for sid in finding.source_ids)
-            support_tag = f" _({finding.support})_" if finding.support != "supported" else ""
+            support_tag = " ⚠️ _(weak)_" if finding.support == "weak" else ""
             lines.append(f"- {finding.statement} {cites}{support_tag}")
         lines.append("")
 

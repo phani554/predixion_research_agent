@@ -9,4 +9,4 @@
 - [x] 2.3 Add `confidence_score()`, level mapping, self-rating cap, status rules, low-confidence prefix; verify: `test_confidence_capped_by_self_assessment`, `test_strong_evidence_gives_high_confidence`, `test_no_valid_findings_is_insufficient_evidence`
 
 ## 3. Complete the pipeline
-- [ ] 3.1 Wire synthesis + grounding into `run_research` with the synthesis-failure path; render confidence reasons and weak markers; verify: `test_happy_path_is_answered_with_sources`, `test_synthesis_failure_still_returns_sources`, `test_poisoned_page_is_reported_not_obeyed`, and one live run of the vector-database question
+- [x] 3.1 Wire synthesis + grounding into `run_research` with the synthesis-failure path; render confidence reasons and weak markers; verify: `test_happy_path_is_answered_with_sources`, `test_synthesis_failure_still_returns_sources`, `test_poisoned_page_is_reported_not_obeyed`, and one live run of the vector-database question

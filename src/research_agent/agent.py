@@ -6,10 +6,12 @@ from typing import Any
 
 from research_agent.config import Settings
 from research_agent.executor import Executor
+from research_agent.grounding import dedupe, ground
 from research_agent.guard import check_question
-from research_agent.llm import OpenAICompatLLM
+from research_agent.llm import LLMError, OpenAICompatLLM, StructuredOutputError
 from research_agent.planner import make_plan
 from research_agent.schemas import Confidence, FinalAnswer, RunMetrics, RunResult, SourceRef
+from research_agent.synthesizer import synthesize
 from research_agent.tracing import Tracer
 
 
@@ -24,7 +26,7 @@ def run_research(
 
     Catches any internal failures and ensures callers always receive a validated FinalAnswer contract.
     """
-    cfg = settings or Settings()
+    cfg = settings if settings is not None else Settings.from_env()
     run_id = f"run_{uuid.uuid4().hex[:12]}"
 
     try:
@@ -132,31 +134,70 @@ def run_research(
                 metrics=active_tracer.metrics,
             )
 
-        # Sources found (synthesis will be wired in change 07)
-        limitations = []
+        # Synthesize draft answer
+        try:
+            draft = synthesize(
+                clean_q,
+                plan,
+                evidence.sources,
+                llm_client,
+                tracer=active_tracer,
+            )
+        except (StructuredOutputError, LLMError, Exception) as synth_err:
+            limitations = []
+            if plan.is_fallback:
+                limitations.append("Planner failed: using fallback research plan.")
+            limitations.extend(evidence.tool_errors)
+            limitations.append(f"Synthesis failed: {synth_err}")
+
+            selected_source_refs = [SourceRef(id=s.id, title=s.title, url=s.url) for s in evidence.sources]
+            return RunResult(
+                run_id=run_id,
+                answer=FinalAnswer(
+                    question=clean_q,
+                    status="error",
+                    short_answer=f"Failed to synthesize an answer from the retrieved evidence: {synth_err}",
+                    key_findings=[],
+                    sources=selected_source_refs,
+                    confidence=Confidence.low,
+                    confidence_score=0.0,
+                    confidence_reasons=["Synthesis generation failed."],
+                    limitations=dedupe(limitations),
+                    assumptions=plan.assumptions,
+                    next_steps=[
+                        "Read the retrieved sources directly.",
+                        "Retry the research question with a different model or phrasing.",
+                    ],
+                ),
+                plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
+                sources=selected_source_refs,
+                rejected=[r.model_dump() for r in evidence.rejected],
+                metrics=active_tracer.metrics,
+            )
+
+        # Ground the draft answer into FinalAnswer
+        final_answer = ground(clean_q, draft, plan, evidence)
+
+        # Merge plan fallback, tool errors, budget, and injection limitations
+        extra_limitations: list[str] = []
         if plan.is_fallback:
-            limitations.append("Planner failed: using fallback research plan.")
-        limitations.extend(evidence.tool_errors)
-        if evidence.uncovered_steps:
-            limitations.append(f"Sub-questions uncovered: {evidence.uncovered_steps}")
+            extra_limitations.append("Planner failed: using fallback research plan.")
+        extra_limitations.extend(evidence.tool_errors)
+        if evidence.budget_exhausted:
+            extra_limitations.append("Budget exhausted during research execution.")
+        if any("prompt_injection_suspected" in s.flags for s in evidence.sources):
+            extra_limitations.append(
+                "Retrieved source text contained patterns that looked like instructions to the AI and was quarantined."
+            )
+
+        if extra_limitations:
+            final_answer.limitations = dedupe(final_answer.limitations + extra_limitations)
 
         return RunResult(
             run_id=run_id,
-            answer=FinalAnswer(
-                question=clean_q,
-                status="answered",
-                short_answer=f"Found {len(evidence.sources)} relevant sources.",
-                key_findings=[],
-                sources=[SourceRef(id=s.id, title=s.title, url=s.url) for s in evidence.sources],
-                confidence=Confidence.medium if len(evidence.sources) >= 2 else Confidence.low,
-                confidence_score=0.5,
-                confidence_reasons=[f"Collected {len(evidence.sources)} sources."],
-                limitations=limitations,
-                assumptions=plan.assumptions,
-                next_steps=[],
-            ),
+            answer=final_answer,
             plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
-            sources=[SourceRef(id=s.id, title=s.title, url=s.url) for s in evidence.sources],
+            sources=final_answer.sources,
             rejected=[r.model_dump() for r in evidence.rejected],
             metrics=active_tracer.metrics,
         )
