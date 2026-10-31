@@ -1,7 +1,7 @@
 # Tasks
 
 ## 1. Synthesis
-- [ ] 1.1 Add `DraftFinding`/`DraftAnswer`, `format_evidence`, `SYNTH_SYSTEM`, `synthesize()`; verify: a FakeLLM test that the prompt contains `<source id="S1"` blocks and returns a DraftAnswer
+- [x] 1.1 Add `DraftFinding`/`DraftAnswer`, `format_evidence`, `SYNTH_SYSTEM`, `synthesize()`; verify: a FakeLLM test that the prompt contains `<source id="S1"` blocks and returns a DraftAnswer
 
 ## 2. Grounding
 - [ ] 2.1 Add `ground()` citation filtering and source listing; verify: `test_uncited_and_unknown_citations_removed`

@@ -104,6 +104,24 @@ class Finding(BaseModel):
     support: Literal["supported", "weak"] = "supported"
 
 
+class DraftFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    statement: str
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class DraftAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    short_answer: str
+    key_findings: list[DraftFinding] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
+    self_confidence: Confidence = Confidence.medium
+
+
 class PlanStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

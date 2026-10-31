@@ -5,10 +5,11 @@ import uuid
 from typing import Any
 
 from research_agent.config import Settings
+from research_agent.executor import Executor
 from research_agent.guard import check_question
 from research_agent.llm import OpenAICompatLLM
 from research_agent.planner import make_plan
-from research_agent.schemas import Confidence, FinalAnswer, RunMetrics, RunResult
+from research_agent.schemas import Confidence, FinalAnswer, RunMetrics, RunResult, SourceRef
 from research_agent.tracing import Tracer
 
 
@@ -96,29 +97,67 @@ def run_research(
                 metrics=active_tracer.metrics,
             )
 
+        # Execute research plan
+        executor = Executor(settings=cfg, tracer=active_tracer, tools=tools)
+        evidence = executor.run(plan)
+
+        if not evidence.sources:
+            limitations = []
+            if plan.is_fallback:
+                limitations.append("Planner failed: using fallback research plan.")
+            limitations.extend(evidence.tool_errors)
+            if evidence.budget_exhausted:
+                limitations.append("Budget exhausted during research execution.")
+            if not limitations:
+                limitations.append("No authoritative or relevant sources found for query.")
+
+            return RunResult(
+                run_id=run_id,
+                answer=FinalAnswer(
+                    question=clean_q,
+                    status="insufficient_evidence",
+                    short_answer="Insufficient evidence to answer the question.",
+                    key_findings=[],
+                    sources=[],
+                    confidence=Confidence.low,
+                    confidence_score=0.0,
+                    confidence_reasons=["No trustworthy or relevant sources were retrieved to substantiate an answer."],
+                    limitations=limitations,
+                    assumptions=plan.assumptions,
+                    next_steps=["Broaden search query or check tool connectivity."],
+                ),
+                plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
+                sources=[],
+                rejected=[r.model_dump() for r in evidence.rejected],
+                metrics=active_tracer.metrics,
+            )
+
+        # Sources found (synthesis will be wired in change 07)
         limitations = []
         if plan.is_fallback:
             limitations.append("Planner failed: using fallback research plan.")
-        limitations.append("Research pipeline is not implemented yet.")
+        limitations.extend(evidence.tool_errors)
+        if evidence.uncovered_steps:
+            limitations.append(f"Sub-questions uncovered: {evidence.uncovered_steps}")
 
         return RunResult(
             run_id=run_id,
             answer=FinalAnswer(
                 question=clean_q,
-                status="error",
-                short_answer="The research agent pipeline is not implemented yet.",
+                status="answered",
+                short_answer=f"Found {len(evidence.sources)} relevant sources.",
                 key_findings=[],
-                sources=[],
-                confidence=Confidence.low,
-                confidence_score=0.0,
-                confidence_reasons=["Pipeline under active development."],
+                sources=[SourceRef(id=s.id, title=s.title, url=s.url) for s in evidence.sources],
+                confidence=Confidence.medium if len(evidence.sources) >= 2 else Confidence.low,
+                confidence_score=0.5,
+                confidence_reasons=[f"Collected {len(evidence.sources)} sources."],
                 limitations=limitations,
                 assumptions=plan.assumptions,
-                next_steps=["Implement tool execution and synthesis modules."],
+                next_steps=[],
             ),
             plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
-            sources=[],
-            rejected=[],
+            sources=[SourceRef(id=s.id, title=s.title, url=s.url) for s in evidence.sources],
+            rejected=[r.model_dump() for r in evidence.rejected],
             metrics=active_tracer.metrics,
         )
 

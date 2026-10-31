@@ -22,14 +22,27 @@ def test_cli_invalid_input_json(capsys, tmp_path) -> None:
 
 
 def test_cli_saves_run_json(capsys, tmp_path) -> None:
+    from research_agent.schemas import Confidence, FinalAnswer, RunResult
+
     out_file = tmp_path / "custom_run.json"
-    with patch("sys.argv", ["research_agent", "What is quantum computing?", "--out", str(out_file)]):
+    mock_res = RunResult(
+        run_id="run_123",
+        answer=FinalAnswer(
+            question="What is quantum computing?",
+            status="answered",
+            short_answer="Quantum computing uses qubits.",
+            confidence=Confidence.high,
+            confidence_score=0.9,
+        ),
+    )
+    with patch("research_agent.cli.run_research", return_value=mock_res), \
+         patch("sys.argv", ["research_agent", "What is quantum computing?", "--out", str(out_file)]):
         exit_code = main()
-        # Status is error ("pipeline not implemented"), so exit code is 2
-        assert exit_code == 2
+        assert exit_code == 0
 
     assert out_file.exists()
     saved_data = json.loads(out_file.read_text(encoding="utf-8"))
     assert "answer" in saved_data
     assert "run_id" in saved_data
+    assert saved_data["run_id"] == "run_123"
 

@@ -9,4 +9,4 @@
 - [x] 2.2 Add the coverage check and one follow-up round with tool/wording switch; verify: `test_follow_up_round_switches_tool_for_uncovered_step`
 
 ## 3. Wire into the run
-- [ ] 3.1 Call the executor from `run_research`; return insufficient_evidence without synthesis when no sources; verify: `test_all_tools_failing_yields_no_sources`, `test_tools_all_down_skips_synthesis`
+- [x] 3.1 Call the executor from `run_research`; return insufficient_evidence without synthesis when no sources; verify: `test_all_tools_failing_yields_no_sources`, `test_tools_all_down_skips_synthesis`
