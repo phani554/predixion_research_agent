@@ -119,8 +119,11 @@ def make_plan(
             tracer=tracer,
             purpose="planning",
         )
-        return normalise_plan(plan, question, cfg)
+        norm = normalise_plan(plan, question, cfg)
+        if norm.is_fallback and tracer and hasattr(tracer, "event"):
+            tracer.event("planner_fallback", reason="Plan had 0 steps after normalization", question=question)
+        return norm
     except (StructuredOutputError, LLMError, Exception) as exc:
         if tracer and hasattr(tracer, "event"):
-            tracer.event("planner_fallback", error=str(exc))
+            tracer.event("planner_fallback", reason=str(exc), question=question)
         return fallback_plan(question, reason=str(exc))

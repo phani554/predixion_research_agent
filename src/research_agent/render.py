@@ -70,6 +70,12 @@ def to_markdown(result: RunResult, verbose: bool = False) -> str:
             lines.append("")
 
         lines.append("## Run Metrics")
+        lines.append(
+            f"**Metrics:** {result.metrics.total_time_s:.2f}s | {result.metrics.llm_calls} LLM calls | "
+            f"{result.metrics.tool_calls} tool calls ({result.metrics.tool_failures} failed) | "
+            f"{result.metrics.prompt_tokens} in / {result.metrics.completion_tokens} out tokens | "
+            f"${result.metrics.est_cost_usd:.4f}"
+        )
         lines.append(f"- Run ID: `{result.run_id}`")
         lines.append(f"- Total time: {result.metrics.total_time_s:.2f}s")
         lines.append(f"- LLM calls: {result.metrics.llm_calls}")

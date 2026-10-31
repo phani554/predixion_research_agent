@@ -1,6 +1,7 @@
 """Top-level agent orchestration and pipeline entry point."""
 from __future__ import annotations
 
+from contextlib import nullcontext
 import uuid
 from typing import Any
 
@@ -27,11 +28,23 @@ def run_research(
     Catches any internal failures and ensures callers always receive a validated FinalAnswer contract.
     """
     cfg = settings if settings is not None else Settings.from_env()
-    run_id = f"run_{uuid.uuid4().hex[:12]}"
+    active_tracer = (
+        tracer
+        if tracer is not None
+        else Tracer(
+            runs_dir=cfg.runs_dir,
+            price_in=cfg.llm_price_in_per_m,
+            price_out=cfg.llm_price_out_per_m,
+        )
+    )
+    run_id = getattr(active_tracer, "run_id", f"run_{uuid.uuid4().hex[:12]}")
+    if hasattr(active_tracer, "event"):
+        active_tracer.event("run_started", question=question, faults=cfg.faults)
 
     try:
         clean_q, error = check_question(question, cfg)
         if error:
+            metrics = active_tracer.finish() if hasattr(active_tracer, "finish") else RunMetrics()
             return RunResult(
                 run_id=run_id,
                 answer=FinalAnswer(
@@ -50,11 +63,10 @@ def run_research(
                 plan=[],
                 sources=[],
                 rejected=[],
-                metrics=RunMetrics(),
+                metrics=metrics,
             )
 
         # Execute planning phase
-        active_tracer = tracer if tracer is not None else Tracer()
         if llm is None:
             extra_body = None
             if cfg.llm_extra_body:
@@ -75,9 +87,16 @@ def run_research(
         else:
             llm_client = llm
 
-        plan = make_plan(clean_q, llm_client, settings=cfg, tracer=active_tracer)
+        plan_span = (
+            active_tracer.span("plan")
+            if hasattr(active_tracer, "span")
+            else nullcontext({})
+        )
+        with plan_span:
+            plan = make_plan(clean_q, llm_client, settings=cfg, tracer=active_tracer)
 
         if not plan.in_scope:
+            metrics = active_tracer.finish() if hasattr(active_tracer, "finish") else RunMetrics()
             return RunResult(
                 run_id=run_id,
                 answer=FinalAnswer(
@@ -96,12 +115,18 @@ def run_research(
                 plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
                 sources=[],
                 rejected=[],
-                metrics=active_tracer.metrics,
+                metrics=metrics,
             )
 
         # Execute research plan
         executor = Executor(settings=cfg, tracer=active_tracer, tools=tools)
-        evidence = executor.run(plan)
+        execute_span = (
+            active_tracer.span("execute")
+            if hasattr(active_tracer, "span")
+            else nullcontext({})
+        )
+        with execute_span:
+            evidence = executor.run(plan)
 
         if not evidence.sources:
             limitations = []
@@ -113,6 +138,11 @@ def run_research(
             if not limitations:
                 limitations.append("No authoritative or relevant sources found for query.")
 
+            metrics = (
+                active_tracer.finish(sources_considered=evidence.candidates_considered, sources_used=0)
+                if hasattr(active_tracer, "finish")
+                else RunMetrics()
+            )
             return RunResult(
                 run_id=run_id,
                 answer=FinalAnswer(
@@ -131,18 +161,24 @@ def run_research(
                 plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
                 sources=[],
                 rejected=[r.model_dump() for r in evidence.rejected],
-                metrics=active_tracer.metrics,
+                metrics=metrics,
             )
 
         # Synthesize draft answer
         try:
-            draft = synthesize(
-                clean_q,
-                plan,
-                evidence.sources,
-                llm_client,
-                tracer=active_tracer,
+            synth_span = (
+                active_tracer.span("synthesize")
+                if hasattr(active_tracer, "span")
+                else nullcontext({})
             )
+            with synth_span:
+                draft = synthesize(
+                    clean_q,
+                    plan,
+                    evidence.sources,
+                    llm_client,
+                    tracer=active_tracer,
+                )
         except (StructuredOutputError, LLMError, Exception) as synth_err:
             limitations = []
             if plan.is_fallback:
@@ -151,6 +187,14 @@ def run_research(
             limitations.append(f"Synthesis failed: {synth_err}")
 
             selected_source_refs = [SourceRef(id=s.id, title=s.title, url=s.url) for s in evidence.sources]
+            metrics = (
+                active_tracer.finish(
+                    sources_considered=evidence.candidates_considered,
+                    sources_used=len(evidence.sources),
+                )
+                if hasattr(active_tracer, "finish")
+                else RunMetrics()
+            )
             return RunResult(
                 run_id=run_id,
                 answer=FinalAnswer(
@@ -172,11 +216,17 @@ def run_research(
                 plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
                 sources=selected_source_refs,
                 rejected=[r.model_dump() for r in evidence.rejected],
-                metrics=active_tracer.metrics,
+                metrics=metrics,
             )
 
         # Ground the draft answer into FinalAnswer
-        final_answer = ground(clean_q, draft, plan, evidence)
+        ground_span = (
+            active_tracer.span("ground")
+            if hasattr(active_tracer, "span")
+            else nullcontext({})
+        )
+        with ground_span:
+            final_answer = ground(clean_q, draft, plan, evidence)
 
         # Merge plan fallback, tool errors, budget, and injection limitations
         extra_limitations: list[str] = []
@@ -193,16 +243,28 @@ def run_research(
         if extra_limitations:
             final_answer.limitations = dedupe(final_answer.limitations + extra_limitations)
 
+        metrics = (
+            active_tracer.finish(
+                sources_considered=evidence.candidates_considered,
+                sources_used=len(final_answer.sources),
+            )
+            if hasattr(active_tracer, "finish")
+            else RunMetrics()
+        )
+
         return RunResult(
             run_id=run_id,
             answer=final_answer,
             plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
             sources=final_answer.sources,
             rejected=[r.model_dump() for r in evidence.rejected],
-            metrics=active_tracer.metrics,
+            metrics=metrics,
         )
 
     except Exception as exc:
+        if active_tracer and hasattr(active_tracer, "event"):
+            active_tracer.event("unhandled_exception", error=str(exc))
+        metrics = active_tracer.finish() if (active_tracer and hasattr(active_tracer, "finish")) else RunMetrics()
         return RunResult(
             run_id=run_id,
             answer=FinalAnswer(
@@ -221,6 +283,6 @@ def run_research(
             plan=[],
             sources=[],
             rejected=[],
-            metrics=RunMetrics(),
+            metrics=metrics,
         )
 

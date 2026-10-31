@@ -197,55 +197,74 @@ def structured(
     purpose: str = "",
 ) -> T:
     """Request structured output from the LLM, validating against model_cls with at most one repair retry."""
-    resp = llm.complete(messages, json_mode=True, purpose=purpose)
-    if tracer and hasattr(tracer, "record_llm"):
-        tracer.record_llm(resp.prompt_tokens, resp.completion_tokens, purpose=purpose)
+    from contextlib import nullcontext
 
-    try:
-        raw_json = extract_json(resp.text)
-        data = json.loads(raw_json)
-        return model_cls.model_validate(data)
-    except Exception as first_err:
-        if tracer and hasattr(tracer, "event"):
-            tracer.event(
-                "invalid_llm_reply",
-                error=str(first_err),
-                preview=resp.text[:100],
-                purpose=purpose,
-            )
+    span_ctx = (
+        tracer.span("llm", purpose=purpose, model_cls=model_cls.__name__)
+        if (tracer and hasattr(tracer, "span"))
+        else nullcontext({})
+    )
 
-        # Exactly one repair attempt
-        repair_messages = list(messages) + [
-            {"role": "assistant", "content": resp.text},
-            {
-                "role": "user",
-                "content": (
-                    f"The previous output failed validation for schema {model_cls.__name__}:\n"
-                    f"{first_err}\n"
-                    f"Please fix the error and reply with valid JSON only."
-                ),
-            },
-        ]
-
-        repair_resp = llm.complete(repair_messages, json_mode=True, purpose=purpose)
+    with span_ctx as s:
+        resp = llm.complete(messages, json_mode=True, purpose=purpose)
         if tracer and hasattr(tracer, "record_llm"):
-            tracer.record_llm(repair_resp.prompt_tokens, repair_resp.completion_tokens, purpose=purpose)
+            tracer.record_llm(resp.prompt_tokens, resp.completion_tokens, purpose=purpose)
 
         try:
-            repair_json = extract_json(repair_resp.text)
-            repair_data = json.loads(repair_json)
-            return model_cls.model_validate(repair_data)
-        except Exception as second_err:
+            raw_json = extract_json(resp.text)
+            data = json.loads(raw_json)
+            return model_cls.model_validate(data)
+        except Exception as first_err:
+            if isinstance(s, dict):
+                s["status"] = "invalid_output"
+                s["error"] = str(first_err)
+                s["preview"] = resp.text[:300]
             if tracer and hasattr(tracer, "event"):
                 tracer.event(
-                    "invalid_llm_reply",
-                    error=str(second_err),
-                    preview=repair_resp.text[:100],
+                    "invalid_output",
+                    error=str(first_err),
+                    preview=resp.text[:300],
                     purpose=purpose,
                 )
-            raise StructuredOutputError(
-                f"Failed to produce valid {model_cls.__name__} after one repair attempt: {second_err}"
-            ) from second_err
+
+            # Exactly one repair attempt
+            repair_messages = list(messages) + [
+                {"role": "assistant", "content": resp.text},
+                {
+                    "role": "user",
+                    "content": (
+                        f"The previous output failed validation for schema {model_cls.__name__}:\n"
+                        f"{first_err}\n"
+                        f"Please fix the error and reply with valid JSON only."
+                    ),
+                },
+            ]
+
+            repair_resp = llm.complete(repair_messages, json_mode=True, purpose=purpose)
+            if tracer and hasattr(tracer, "record_llm"):
+                tracer.record_llm(repair_resp.prompt_tokens, repair_resp.completion_tokens, purpose=purpose)
+
+            try:
+                repair_json = extract_json(repair_resp.text)
+                repair_data = json.loads(repair_json)
+                if isinstance(s, dict):
+                    s["status"] = "ok"
+                return model_cls.model_validate(repair_data)
+            except Exception as second_err:
+                if isinstance(s, dict):
+                    s["status"] = "invalid_output"
+                    s["error"] = str(second_err)
+                    s["preview"] = repair_resp.text[:300]
+                if tracer and hasattr(tracer, "event"):
+                    tracer.event(
+                        "invalid_output",
+                        error=str(second_err),
+                        preview=repair_resp.text[:300],
+                        purpose=purpose,
+                    )
+                raise StructuredOutputError(
+                    f"Failed to produce valid {model_cls.__name__} after one repair attempt: {second_err}"
+                ) from second_err
 
 
 class FaultyLLM:

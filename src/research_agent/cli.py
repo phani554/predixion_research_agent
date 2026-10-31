@@ -20,7 +20,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--json", action="store_true", help="Output the FinalAnswer as JSON")
     parser.add_argument("-v", "--verbose", action="store_true", help="Include metrics and execution details")
     parser.add_argument("--no-cache", action="store_true", help="Bypass cached tool responses")
-    parser.add_argument("--fault", type=str, default=None, help="Inject fault for testing and evals")
+    parser.add_argument("--fault", action="append", default=[], help="Inject fault for testing and evals (repeatable)")
     parser.add_argument("--out", type=str, default=None, help="Path to save the complete run result JSON")
 
     return parser.parse_args(argv)
@@ -30,6 +30,25 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint: executes research, writes run artifact to disk, and prints output."""
     args = parse_args(argv)
     settings = Settings.from_env()
+
+    # Apply faults from CLI
+    active_faults = list(settings.faults)
+    if args.fault:
+        for f in args.fault:
+            if "," in f:
+                active_faults.extend([item.strip() for item in f.split(",") if item.strip()])
+            else:
+                active_faults.append(f.strip())
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for f in active_faults:
+        if f not in seen:
+            seen.add(f)
+            deduped.append(f)
+    settings.faults = deduped
+
+    if args.no_cache:
+        settings.cache_ttl_s = 0
 
     result = run_research(args.question, settings=settings)
 

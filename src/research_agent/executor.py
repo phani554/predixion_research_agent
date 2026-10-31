@@ -307,6 +307,12 @@ class Executor:
 
             if follow_up_steps:
                 follow_up_rounds += 1
+                if self.tracer and hasattr(self.tracer, "event"):
+                    self.tracer.event(
+                        "follow_up_round",
+                        round=follow_up_rounds,
+                        uncovered_steps=uncovered,
+                    )
                 self._run_round(
                     follow_up_steps,
                     budget,

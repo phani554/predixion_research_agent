@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Intent = Literal["comparison", "list_entities", "pros_cons", "explainer", "other"]
 ToolName = Literal["web_search", "wikipedia"]
@@ -174,11 +174,47 @@ class RunMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     total_time_s: float = 0.0
+    latency_ms: float = 0.0
     llm_calls: int = 0
     tool_calls: int = 0
+    tool_failures: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
     estimated_cost_usd: float = 0.0
+    est_cost_usd: float = 0.0
+    sources_considered: int = 0
+    sources_used: int = 0
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_metric_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Sync prompt/input tokens
+            if "prompt_tokens" in data and "input_tokens" not in data:
+                data["input_tokens"] = data["prompt_tokens"]
+            elif "input_tokens" in data and "prompt_tokens" not in data:
+                data["prompt_tokens"] = data["input_tokens"]
+
+            # Sync completion/output tokens
+            if "completion_tokens" in data and "output_tokens" not in data:
+                data["output_tokens"] = data["completion_tokens"]
+            elif "output_tokens" in data and "completion_tokens" not in data:
+                data["completion_tokens"] = data["output_tokens"]
+
+            # Sync cost
+            if "est_cost_usd" in data and "estimated_cost_usd" not in data:
+                data["estimated_cost_usd"] = data["est_cost_usd"]
+            elif "estimated_cost_usd" in data and "est_cost_usd" not in data:
+                data["est_cost_usd"] = data["estimated_cost_usd"]
+
+            # Sync latency
+            if "latency_ms" in data and "total_time_s" not in data:
+                data["total_time_s"] = data["latency_ms"] / 1000.0
+            elif "total_time_s" in data and "latency_ms" not in data:
+                data["latency_ms"] = data["total_time_s"] * 1000.0
+        return data
 
 
 class RunResult(BaseModel):

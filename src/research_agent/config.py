@@ -63,6 +63,7 @@ class Settings(BaseModel):
     search_results_per_query: int = 5
     cache_ttl_s: int = 86400
     cache_dir: str = ".cache"
+    runs_dir: str = "runs"
     faults: list[str] = Field(default_factory=list)
 
     min_source_score: float = 0.25
