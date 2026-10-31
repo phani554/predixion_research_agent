@@ -41,6 +41,31 @@ def run_tool(
     max_retries = cfg.tool_max_retries
     t0 = time.monotonic()
 
+    # Fault injection checks
+    if f"{name}:timeout" in cfg.faults:
+        if tracer and hasattr(tracer, "record_tool"):
+            tracer.record_tool(name, duration_s=0.0)
+        return ToolResult(
+            tool=name,
+            status="timeout",
+            error=f"Injected fault: {name}:timeout",
+            attempts=1,
+            latency_ms=0.0,
+            cached=False,
+        )
+
+    if f"{name}:error" in cfg.faults:
+        if tracer and hasattr(tracer, "record_tool"):
+            tracer.record_tool(name, duration_s=0.0)
+        return ToolResult(
+            tool=name,
+            status="error",
+            error=f"Injected fault: {name}:error",
+            attempts=1,
+            latency_ms=0.0,
+            cached=False,
+        )
+
     # Check cache if provided
     if cache is not None and hasattr(cache, "get"):
         cached_data = cache.get(name, args)
@@ -56,16 +81,26 @@ def run_tool(
             )
 
     attempts = 0
+    import inspect
+    sig = inspect.signature(fn)
+    call_args = dict(args)
+    if "settings" in sig.parameters and "settings" not in call_args:
+        call_args["settings"] = cfg
+
     for attempt in range(1, max_retries + 2):
         attempts = attempt
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(fn, **args)
+            future = executor.submit(fn, **call_args)
             try:
                 res = future.result(timeout=timeout_s)
                 latency_ms = (time.monotonic() - t0) * 1000.0
 
                 if tracer and hasattr(tracer, "record_tool"):
                     tracer.record_tool(name, duration_s=latency_ms / 1000.0)
+
+                # Apply prompt injection fault if configured
+                if name == "fetch_page" and "fetch_page:injection" in cfg.faults and isinstance(res, str):
+                    res = f"{INJECTION_FIXTURE}\n\n{res}"
 
                 # Determine status if empty
                 if res is None or (isinstance(res, (list, dict, str)) and not res):

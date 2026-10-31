@@ -84,3 +84,30 @@ def test_hard_timeout() -> None:
     assert result.status == "timeout"
     assert result.attempts == 1
 
+
+def test_fault_injection_and_failure_counted() -> None:
+    from research_agent.tools.base import run_tool, INJECTION_FIXTURE
+    from research_agent.tracing import Tracer
+
+    tracer = Tracer()
+    # Test <tool>:timeout fault injection
+    timeout_settings = Settings(faults=["web_search:timeout"])
+    res_timeout = run_tool("web_search", lambda query: ["hit"], {"query": "test"}, settings=timeout_settings, tracer=tracer)
+    assert res_timeout.status == "timeout"
+    assert "injected" in (res_timeout.error or "").lower()
+
+    # Test <tool>:error fault injection
+    error_settings = Settings(faults=["wikipedia:error"])
+    res_error = run_tool("wikipedia", lambda query: "article", {"query": "test"}, settings=error_settings, tracer=tracer)
+    assert res_error.status == "error"
+    assert "injected" in (res_error.error or "").lower()
+
+    # Verify tool calls are counted on tracer
+    assert tracer.metrics.tool_calls == 2
+
+    # Test fetch_page:injection
+    injection_settings = Settings(faults=["fetch_page:injection"])
+    res_inj = run_tool("fetch_page", lambda url: "Normal article content.", {"url": "https://example.com"}, settings=injection_settings)
+    assert res_inj.status == "ok"
+    assert INJECTION_FIXTURE in res_inj.data
+

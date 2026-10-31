@@ -89,5 +89,13 @@ class Settings(BaseModel):
             elif field_name in merged:
                 field_values[field_name] = merged[field_name]
 
+        # Support RA_FAULTS / FAULTS comma-separated list
+        raw_faults = merged.get("RA_FAULTS") or merged.get("FAULTS")
+        if raw_faults:
+            if isinstance(raw_faults, str):
+                field_values["faults"] = [f.strip() for f in raw_faults.split(",") if f.strip()]
+            elif isinstance(raw_faults, list):
+                field_values["faults"] = raw_faults
+
         return cls(**field_values)
 
