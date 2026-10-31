@@ -54,6 +54,35 @@ class SourceRef(BaseModel):
     url: str
 
 
+class Source(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    url: str
+    title: str
+    content: str
+    snippet: str = ""
+    domain: str = ""
+    score: float = 0.0
+    relevance: float = 0.0
+    domain_quality: float = 0.0
+    content_quality: float = 0.0
+    flags: list[str] = Field(default_factory=list)
+    step_id: int | None = None
+
+
+class RejectedSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    title: str = ""
+    domain: str = ""
+    reason: str
+    score: float | None = None
+    relevance: float | None = None
+    step_id: int | None = None
+
+
 class Finding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

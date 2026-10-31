@@ -65,6 +65,10 @@ class Settings(BaseModel):
     cache_dir: str = ".cache"
     faults: list[str] = Field(default_factory=list)
 
+    min_source_score: float = 0.25
+    max_sources_per_domain: int = 2
+    max_sources_for_synthesis: int = 8
+
     @classmethod
     def from_env(cls, env_path: str | Path | None = ".env") -> Settings:
         """Load settings from OS environment with fallback to an optional .env file."""
