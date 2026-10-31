@@ -54,7 +54,7 @@ class Settings(BaseModel):
     max_question_chars: int = 500
     request_timeout_s: float = 30.0
     max_steps: int = 5
-    max_tool_calls: int = 10
+    max_tool_calls: int = 12
 
     tool_timeout_s: float = 10.0
     tool_max_retries: int = 2
@@ -68,6 +68,11 @@ class Settings(BaseModel):
     min_source_score: float = 0.25
     max_sources_per_domain: int = 2
     max_sources_for_synthesis: int = 8
+
+    parallelism: int = 4
+    max_pages_to_fetch: int = 6
+    run_deadline_s: float = 150.0
+    max_follow_up_rounds: int = 1
 
     @classmethod
     def from_env(cls, env_path: str | Path | None = ".env") -> Settings:

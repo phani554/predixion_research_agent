@@ -69,6 +69,7 @@ class Source(BaseModel):
     content_quality: float = 0.0
     flags: list[str] = Field(default_factory=list)
     step_id: int | None = None
+    step_ids: list[int] = Field(default_factory=list)
 
 
 class RejectedSource(BaseModel):
@@ -81,6 +82,18 @@ class RejectedSource(BaseModel):
     score: float | None = None
     relevance: float | None = None
     step_id: int | None = None
+
+
+class Evidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sources: list[Source] = Field(default_factory=list)
+    rejected: list[RejectedSource] = Field(default_factory=list)
+    uncovered_steps: list[int] = Field(default_factory=list)
+    tool_errors: list[str] = Field(default_factory=list)
+    follow_up_rounds: int = 0
+    budget_exhausted: bool = False
+    candidates_considered: int = 0
 
 
 class Finding(BaseModel):
