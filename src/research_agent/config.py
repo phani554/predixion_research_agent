@@ -45,6 +45,8 @@ class Settings(BaseModel):
     llm_json_mode: bool = True
     llm_price_in_per_m: float = 0.30
     llm_price_out_per_m: float = 2.50
+    price_in_per_m: float = 0.30
+    price_out_per_m: float = 2.50
     llm_max_tokens: int = 4096
     llm_timeout_s: float = 60.0
     llm_max_retries: int = 2
@@ -54,6 +56,7 @@ class Settings(BaseModel):
     max_question_chars: int = 500
     request_timeout_s: float = 30.0
     max_steps: int = 5
+    max_plan_steps: int = 5
     max_tool_calls: int = 12
 
     tool_timeout_s: float = 10.0
@@ -62,6 +65,7 @@ class Settings(BaseModel):
     page_char_limit: int = 6000
     search_results_per_query: int = 5
     cache_ttl_s: int = 86400
+    use_cache: bool = True
     cache_dir: str = ".cache"
     runs_dir: str = "runs"
     faults: list[str] = Field(default_factory=list)

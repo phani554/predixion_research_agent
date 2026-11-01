@@ -40,6 +40,12 @@ class Tracer:
         self.spans: list[dict[str, Any]] = []
         self.events: list[dict[str, Any]] = []
 
+    def _now_ms(self) -> float:
+        return round(time.time() * 1000.0, 2)
+
+    def _emit(self, record: dict[str, Any]) -> None:
+        self._write_jsonl(record)
+
     def _write_jsonl(self, entry: dict[str, Any]) -> None:
         """Append an entry as a JSON object line to the run trace file."""
         if not self.runs_dir:
@@ -78,19 +84,19 @@ class Tracer:
             record["duration_s"] = round(duration_ms / 1000.0, 4)
             with self._lock:
                 self.spans.append(record)
-            self._write_jsonl(record)
+            self._emit(record)
 
     def event(self, name: str, **kwargs: Any) -> None:
         """Record an annotated timestamped event during pipeline execution."""
         record: dict[str, Any] = {
             "event": name,
             "name": name,  # For backwards-compatibility
-            "timestamp_ms": round(time.time() * 1000.0, 2),
+            "timestamp_ms": self._now_ms(),
             **kwargs,
         }
         with self._lock:
             self.events.append(record)
-        self._write_jsonl(record)
+        self._emit(record)
 
     def record_llm(
         self,

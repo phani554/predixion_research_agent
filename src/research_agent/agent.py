@@ -41,13 +41,35 @@ def run_research(
     if hasattr(active_tracer, "event"):
         active_tracer.event("run_started", question=question, faults=cfg.faults)
 
+    def _finish(
+        answer: FinalAnswer,
+        plan_steps: list[dict[str, Any]] | None = None,
+        sources: list[SourceRef] | None = None,
+        rejected: list[dict[str, Any]] | None = None,
+        sources_considered: int = 0,
+        sources_used: int = 0,
+    ) -> RunResult:
+        if active_tracer and hasattr(active_tracer, "event"):
+            active_tracer.event("answer_ready", answer=answer.model_dump(mode="json"))
+        metrics = (
+            active_tracer.finish(sources_considered=sources_considered, sources_used=sources_used)
+            if (active_tracer and hasattr(active_tracer, "finish"))
+            else RunMetrics()
+        )
+        return RunResult(
+            run_id=run_id,
+            answer=answer,
+            plan=plan_steps or [],
+            sources=sources or [],
+            rejected=rejected or [],
+            metrics=metrics,
+        )
+
     try:
         clean_q, error = check_question(question, cfg)
         if error:
-            metrics = active_tracer.finish() if hasattr(active_tracer, "finish") else RunMetrics()
-            return RunResult(
-                run_id=run_id,
-                answer=FinalAnswer(
+            return _finish(
+                FinalAnswer(
                     question=question,
                     status="invalid_input",
                     short_answer=error,
@@ -59,11 +81,7 @@ def run_research(
                     limitations=[error],
                     assumptions=[],
                     next_steps=["Provide a question that meets length and content requirements."],
-                ),
-                plan=[],
-                sources=[],
-                rejected=[],
-                metrics=metrics,
+                )
             )
 
         # Execute planning phase
@@ -98,11 +116,12 @@ def run_research(
         with plan_span:
             plan = make_plan(clean_q, llm_client, settings=cfg, tracer=active_tracer)
 
+        if active_tracer and hasattr(active_tracer, "event"):
+            active_tracer.event("plan_ready", plan=plan.model_dump(mode="json"))
+
         if not plan.in_scope:
-            metrics = active_tracer.finish() if hasattr(active_tracer, "finish") else RunMetrics()
-            return RunResult(
-                run_id=run_id,
-                answer=FinalAnswer(
+            return _finish(
+                FinalAnswer(
                     question=clean_q,
                     status="out_of_scope",
                     short_answer=plan.out_of_scope_reason or "Question is out of scope for research agent.",
@@ -115,10 +134,7 @@ def run_research(
                     assumptions=plan.assumptions,
                     next_steps=[],
                 ),
-                plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
-                sources=[],
-                rejected=[],
-                metrics=metrics,
+                plan_steps=[s.model_dump() for s in plan.steps] if plan.steps else [],
             )
 
         # Execute research plan
@@ -131,6 +147,18 @@ def run_research(
         with execute_span:
             evidence = executor.run(plan)
 
+        if hasattr(active_tracer, "metrics") and active_tracer.metrics:
+            active_tracer.metrics.sources_considered = evidence.candidates_considered
+
+        if active_tracer and hasattr(active_tracer, "event"):
+            active_tracer.event(
+                "evidence_ready",
+                sources=[s.model_dump(mode="json", exclude={"content"}) for s in evidence.sources],
+                rejected=[r.model_dump(mode="json") for r in evidence.rejected],
+                uncovered=evidence.uncovered_steps,
+                tool_errors=evidence.tool_errors[:10],
+            )
+
         if not evidence.sources:
             limitations = []
             if plan.is_fallback:
@@ -141,14 +169,8 @@ def run_research(
             if not limitations:
                 limitations.append("No authoritative or relevant sources found for query.")
 
-            metrics = (
-                active_tracer.finish(sources_considered=evidence.candidates_considered, sources_used=0)
-                if hasattr(active_tracer, "finish")
-                else RunMetrics()
-            )
-            return RunResult(
-                run_id=run_id,
-                answer=FinalAnswer(
+            return _finish(
+                FinalAnswer(
                     question=clean_q,
                     status="insufficient_evidence",
                     short_answer="Insufficient evidence to answer the question.",
@@ -161,10 +183,10 @@ def run_research(
                     assumptions=plan.assumptions,
                     next_steps=["Broaden search query or check tool connectivity."],
                 ),
-                plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
-                sources=[],
+                plan_steps=[s.model_dump() for s in plan.steps] if plan.steps else [],
                 rejected=[r.model_dump() for r in evidence.rejected],
-                metrics=metrics,
+                sources_considered=evidence.candidates_considered,
+                sources_used=0,
             )
 
         # Synthesize draft answer
@@ -190,17 +212,8 @@ def run_research(
             limitations.append(f"Synthesis failed: {synth_err}")
 
             selected_source_refs = [SourceRef(id=s.id, title=s.title, url=s.url) for s in evidence.sources]
-            metrics = (
-                active_tracer.finish(
-                    sources_considered=evidence.candidates_considered,
-                    sources_used=len(evidence.sources),
-                )
-                if hasattr(active_tracer, "finish")
-                else RunMetrics()
-            )
-            return RunResult(
-                run_id=run_id,
-                answer=FinalAnswer(
+            return _finish(
+                FinalAnswer(
                     question=clean_q,
                     status="error",
                     short_answer=f"Failed to synthesize an answer from the retrieved evidence: {synth_err}",
@@ -216,10 +229,11 @@ def run_research(
                         "Retry the research question with a different model or phrasing.",
                     ],
                 ),
-                plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
+                plan_steps=[s.model_dump() for s in plan.steps] if plan.steps else [],
                 sources=selected_source_refs,
                 rejected=[r.model_dump() for r in evidence.rejected],
-                metrics=metrics,
+                sources_considered=evidence.candidates_considered,
+                sources_used=len(evidence.sources),
             )
 
         # Ground the draft answer into FinalAnswer
@@ -246,31 +260,20 @@ def run_research(
         if extra_limitations:
             final_answer.limitations = dedupe(final_answer.limitations + extra_limitations)
 
-        metrics = (
-            active_tracer.finish(
-                sources_considered=evidence.candidates_considered,
-                sources_used=len(final_answer.sources),
-            )
-            if hasattr(active_tracer, "finish")
-            else RunMetrics()
-        )
-
-        return RunResult(
-            run_id=run_id,
-            answer=final_answer,
-            plan=[s.model_dump() for s in plan.steps] if plan.steps else [],
+        return _finish(
+            final_answer,
+            plan_steps=[s.model_dump() for s in plan.steps] if plan.steps else [],
             sources=final_answer.sources,
             rejected=[r.model_dump() for r in evidence.rejected],
-            metrics=metrics,
+            sources_considered=evidence.candidates_considered,
+            sources_used=len(final_answer.sources),
         )
 
     except Exception as exc:
         if active_tracer and hasattr(active_tracer, "event"):
             active_tracer.event("unhandled_exception", error=str(exc))
-        metrics = active_tracer.finish() if (active_tracer and hasattr(active_tracer, "finish")) else RunMetrics()
-        return RunResult(
-            run_id=run_id,
-            answer=FinalAnswer(
+        return _finish(
+            FinalAnswer(
                 question=question,
                 status="error",
                 short_answer=f"An unexpected internal error occurred: {exc}",
@@ -282,10 +285,6 @@ def run_research(
                 limitations=[f"Unexpected error: {type(exc).__name__}: {exc}"],
                 assumptions=[],
                 next_steps=["Inspect system logs or report the issue."],
-            ),
-            plan=[],
-            sources=[],
-            rejected=[],
-            metrics=metrics,
+            )
         )
 
