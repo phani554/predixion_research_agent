@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Research Agent</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%23111%22/%3E%3C/svg%3E">
+<style>
+:root{--bg:#fafafa;--card:#fff;--ink:#111;--mute:#737373;--faint:#a3a3a3;--line:#ececec;--soft:#f5f5f5;
+  --accent:#2563eb;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+main{max-width:1180px;margin:0 auto;padding:28px 24px 48px}
+header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px}
+h1{font-size:18px;font-weight:650;margin:0;letter-spacing:-.01em}
+.meta{font-size:12.5px;color:var(--mute)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px}
+.ask{display:flex;gap:8px}
+.ask input{flex:1;font:inherit;font-size:15px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;outline:none;background:#fff}
+.ask input:focus{border-color:#bfbfbf}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px;background:var(--ink);color:#fff;padding:0 22px;font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+.controls{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:10px 2px 0;font-size:12.5px;color:var(--mute)}
+.controls label{display:flex;gap:6px;align-items:center}
+select{font:inherit;font-size:12.5px;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:4px 6px;background:#fff;max-width:260px}
+.banner{display:none;margin-top:10px;font-size:12.5px;color:var(--warn)}
+/* stepper */
+.pipe{margin-top:22px;padding:20px 22px 18px}
+.stages{display:grid;grid-template-columns:repeat(8,1fr)}
+.stage{position:relative;text-align:center;cursor:pointer}
+.stage:after{content:"";position:absolute;top:6px;left:calc(50% + 10px);right:calc(-50% + 10px);height:1px;background:var(--line)}
+.stage:last-child:after{display:none}
+.dot{width:13px;height:13px;border-radius:50%;margin:0 auto 8px;background:#e5e5e5;transition:.2s}
+.stage.active .dot{background:var(--accent);box-shadow:0 0 0 4px #dbe6fd;animation:pulse 1.2s infinite}
+.stage.done .dot{background:var(--ok)}
+.stage.warn .dot{background:var(--warn)}
+.stage.fail .dot{background:var(--bad)}
+.stage.skipped .dot{background:#fff;border:1px dashed #d4d4d4}
+.stage .nm{font-size:12.5px;font-weight:600;color:var(--ink)}
+.stage.idle .nm,.stage.skipped .nm{color:var(--faint);font-weight:500}
+.stage .st{font-size:11.5px;color:var(--mute);min-height:17px}
+.stage.sel .nm{text-decoration:underline;text-underline-offset:4px}
+@keyframes pulse{50%{box-shadow:0 0 0 7px #dbe6fd00}}
+.explain{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:13.5px;color:#404040}
+.explain b{color:var(--ink)}
+.explain .run{margin-top:4px;font-family:var(--mono);font-size:12px;color:var(--mute)}
+/* timeline */
+.wf{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.row{display:grid;grid-template-columns:200px 1fr 56px;gap:12px;align-items:center;height:20px;font-size:12px}
+.row .lab{font-family:var(--mono);color:#525252;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .track{position:relative;height:6px;background:var(--soft);border-radius:3px}
+.row .bar{position:absolute;top:0;height:6px;border-radius:3px;min-width:3px}
+.row .ms{text-align:right;font-family:var(--mono);color:var(--faint)}
+.c-llm{background:#7c3aed}.c-tool{background:var(--ok)}.c-fetch{background:#0ea5e9}.c-bad{background:var(--bad)}.c-run{background:var(--accent);opacity:.6}
+/* lower */
+.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px;margin-top:16px}
+.panel{padding:16px 18px;min-height:280px}
+.h{font-size:12px;font-weight:600;color:var(--mute);margin:0 0 10px}
+.log{max-height:560px;overflow:auto}
+.ev{display:grid;grid-template-columns:52px 8px minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px solid #f4f4f4;cursor:pointer}
+.ev:last-child{border-bottom:0}
+.ev .t{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:2px}
+.ev .k{width:6px;height:6px;border-radius:50%;margin-top:7px;background:#d4d4d4}
+.ev.ok .k{background:var(--ok)}.ev.warn .k{background:var(--warn)}.ev.bad .k{background:var(--bad)}.ev.run .k{background:var(--accent)}
+.ev .ttl{font-size:13px}
+.ev .sub{font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev .more{display:none;font-size:12px;color:var(--mute);margin-top:4px}
+.ev.open .more{display:block}.ev.open .sub{white-space:normal}
+.ev pre{font-family:var(--mono);font-size:11px;background:var(--soft);padding:8px;border-radius:6px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto;margin:6px 0 0}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:-4px 0 14px}
+.tab{padding:6px 0 9px;font-size:13px;color:var(--mute);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--ink);border-color:var(--ink);font-weight:600}
+.empty{color:var(--faint);font-size:13px;padding:36px 0;text-align:center}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11.5px;color:var(--mute);font-weight:500;padding:0 8px 8px 0}
+td{padding:9px 8px 9px 0;border-top:1px solid #f4f4f4;vertical-align:top}
+.mono{font-family:var(--mono);font-size:12px}
+.dim{color:var(--mute);font-size:12px}
+.red{color:var(--bad)}.amber{color:var(--warn)}.green{color:var(--ok)}
+a{color:var(--ink);text-decoration:underline;text-decoration-color:#d4d4d4;text-underline-offset:3px}a:hover{text-decoration-color:var(--ink)}
+.bar2{height:4px;width:80px;background:var(--soft);border-radius:2px;margin-top:5px}.bar2 span{display:block;height:4px;border-radius:2px;background:var(--ink)}
+.status{font-size:13px;color:var(--mute);margin-bottom:6px}.status b{color:var(--ink)}
+.short{font-size:15.5px;line-height:1.6;margin:0 0 16px}
+ol.f{margin:0 0 16px;padding-left:20px}ol.f li{margin:0 0 8px}
+sup{font-family:var(--mono);font-size:10px;color:var(--accent);margin-left:2px;cursor:help}
+ul{margin:4px 0 0;padding-left:18px}ul li{margin:2px 0}
+details{margin-top:12px}summary{font-size:12.5px;color:var(--mute);cursor:pointer}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:20px 16px}
+.kpi .v{font-size:22px;font-weight:650;letter-spacing:-.02em}.kpi .l{font-size:12px;color:var(--mute)}
+@media(max-width:960px){.grid{grid-template-columns:1fr}.stages{grid-template-columns:repeat(4,1fr);row-gap:14px}.stage:nth-child(4):after{display:none}}
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Research Agent</h1><div class="meta" id="cfg"></div></header>
+
+  <div class="ask">
+    <input id="q" type="text" placeholder="Ask a research question" value="Compare the top 3 open-source vector databases for a startup building RAG products.">
+    <button id="go">Run</button>
+  </div>
+  <div class="controls">
+    <label>Example <select id="sample"></select></label>
+    <label>Failure test <select id="fault"><option value="">None</option></select></label>
+    <label><input type="checkbox" id="cache" checked> Cache</label>
+    <label>Replay <select id="replay"></select></label>
+  </div>
+  <div class="banner" id="banner"></div>
+
+  <section class="card pipe">
+    <div class="stages" id="stages"></div>
+    <div class="explain" id="explain"></div>
+    <div class="wf" id="wf"></div>
+  </section>
+
+  <section class="grid">
+    <div class="card panel"><div class="h">Trace</div><div class="log" id="log"><div class="empty">Each step appears here as it happens.</div></div></div>
+    <div class="card panel"><div class="tabs" id="tabs"></div><div id="view"></div></div>
+  </section>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=ms=>ms==null?"":ms<1000?`${ms} ms`:`${(ms/1000).toFixed(ms<10000?1:0)} s`;
+const host=u=>{try{return new URL(u).hostname.replace(/^www\./,"")}catch{return u}};
+
+const SAMPLES=[
+ ["Vector databases","Compare the top 3 open-source vector databases for a startup building RAG products."],
+ ["Multi-agent support","Research the pros and cons of using a multi-agent architecture for customer support automation."],
+ ["Agent memory","Compare different approaches to adding memory in an AI support agent."],
+ ["Fictional products","Compare ZephyrDB and QuantaVec for RAG"],
+ ["Out of scope","What is 2+2?"],
+ ["Blank input","   "]];
+const FAULT_LABEL={"web_search:timeout":"Search times out","web_search:error":"Search errors","fetch_page:timeout":"Page fetch times out",
+ "fetch_page:injection":"Poisoned page (prompt injection)","wikipedia:error":"Wikipedia errors","llm:malformed":"LLM returns bad JSON","llm:down":"LLM is down"};
+
+const STAGES=[
+ {id:"guard",n:"Guard",what:"Validates the question.",how:c=>`Code, no LLM: ${c.guard.min_chars}–${c.guard.max_chars} characters, else stop at zero cost.`},
+ {id:"plan",n:"Plan",what:"Splits the question into sub-questions, each with one tool and query.",how:c=>`One LLM call, output validated by Pydantic. One repair retry, then a rule-based fallback.`},
+ {id:"search",n:"Search",what:"Runs the planned tool calls.",how:c=>`${c.budgets.parallelism} in parallel, ${c.budgets.tool_timeout_s}s timeout, ${c.budgets.tool_max_retries} retries, cached. Budget ${c.budgets.max_tool_calls} calls.`},
+ {id:"read",n:"Read",what:"Fetches the most relevant pages.",how:c=>`Up to ${c.budgets.max_pages_to_fetch} pages, spread across sub-questions. Private addresses blocked; a failed fetch keeps the snippet.`},
+ {id:"filter",n:"Filter",what:"Keeps only reliable, relevant sources.",how:c=>`Score = relevance, domain quality, depth. Injected instructions stripped. Min ${c.filter.min_source_score}, max ${c.filter.max_sources_per_domain} per domain.`},
+ {id:"synth",n:"Synthesize",what:"Writes the answer from the kept sources only.",how:c=>`One LLM call; every finding must cite a source id.`},
+ {id:"ground",n:"Ground",what:"Checks citations and scores confidence.",how:c=>`Code, not the model: drops uncited claims, flags weak support, scores from the evidence.`},
+ {id:"answer",n:"Answer",what:"Returns a structured, cited result.",how:c=>`Status, findings, sources, confidence with reasons, limitations.`}];
+const order=STAGES.map(s=>s.id);
+
+let CFG,S,es,timer,tick,t0,sel=null,tab="answer",userTab=false,eid=0;
+function reset(){S={stage:{},note:{},spans:[],open:{},plan:null,ev:null,ans:null,m:null,raw:[],t:0,live:false,ts:{search:[0,0],read:[0,0]}};
+ order.forEach(i=>S.stage[i]="idle");sel=null;userTab=false;tab="plan";$("#log").innerHTML="";$("#banner").style.display="none";render();}
+function set(id,st,note){const c=S.stage[id];if(c==="fail"&&st!=="fail")return;if(c==="warn"&&st==="done"){if(note)S.note[id]=note;return}
+ S.stage[id]=st;if(note!==undefined)S.note[id]=note;if(st==="active")order.slice(0,order.indexOf(id)).forEach(p=>{if(S.stage[p]==="active")S.stage[p]="done"});}
+const skipRest=()=>order.forEach(i=>{if(S.stage[i]==="idle")S.stage[i]="skipped"});
+const arg=a=>!a?"":a.query?`“${String(a.query).slice(0,60)}”`:a.url?host(a.url):"";
+const key=e=>{const n=e.span_start||e.span;return n==="tool"?`tool|${e.tool}|${JSON.stringify(e.args)}`:n==="llm"?`llm|${e.purpose}|${e.attempt}`:n};
+const autoTab=t=>{if(!userTab)tab=t};
+
+function handle(e){
+ S.raw.push(e);const t=e.at_ms??((e.start_ms??0)+(e.duration_ms??0));S.t=Math.max(S.t,t);
+ if(e.span_start)onStart(e);else if(e.span)onSpan(e);else onEvent(e,t);render();}
+
+function onEvent(e,t){
+ switch(e.event){
+ case"run_started":set("guard","active");log({t,title:"Run started",sub:e.question.trim()?e.question:"(empty)",more:e.faults?.length?`Failure test: ${e.faults.map(f=>FAULT_LABEL[f]||f).join(", ")}`:"",raw:e});break;
+ case"planner_fallback":set("plan","warn","fallback");log({t,k:"warn",title:"Planner used fallback plan",sub:e.reason,raw:e});break;
+ case"plan_ready":{S.plan=e.plan;autoTab("plan");const p=e.plan;
+  log({t,k:"ok",title:p.in_scope?`Plan: ${p.steps.length} sub-questions`:"Out of scope",sub:p.in_scope?p.steps.map(s=>s.query).join(" · "):p.out_of_scope_reason,raw:e});break}
+ case"tool_cache_hit":{const st=e.tool==="fetch_page"?"read":"search";set(st,"active");S.ts[st][0]++;
+  S.spans.push({key:"c"+(++eid),name:"tool",start:t,dur:0,ev:{...e,status:"ok",cached:true}});S.cache=(S.cache||[]);S.cache.push(arg(e.args));S.cacheId=log({id:S.cacheId,t,k:"ok",title:`${S.cache.length} cached tool call${S.cache.length>1?"s":""}`,sub:S.cache.join(" · "),more:"Served from the 24h cache: no network call.",raw:e});break}
+ case"follow_up_round":set("filter","warn","follow-up");log({t,k:"warn",title:`Follow-up for ${e.steps.length} uncovered sub-question(s)`,sub:e.steps.map(s=>s.query).join(" · "),more:"Retried once with a different tool or wording.",raw:e});break;
+ case"evidence_ready":{S.ev=e;autoTab("sources");const n=e.sources.length,inj=e.sources.filter(s=>s.flags.includes("prompt_injection_suspected")).length;
+  set("filter",n?(inj||e.uncovered.length?"warn":"done"):"fail",`${n} kept`);
+  log({t,k:n?(inj?"warn":"ok"):"bad",title:`Kept ${n} sources, rejected ${e.rejected.length}`,sub:inj?`${inj} had injected instructions removed`:e.uncovered.length?`Uncovered: step ${e.uncovered.join(", ")}`:"",raw:e});break}
+ case"answer_ready":{S.ans=e.answer;autoTab("answer");const a=e.answer,good=a.status==="answered";
+  set("answer",good?"done":a.status==="error"?"fail":"warn",a.status.replace("_"," "));if(a.status==="invalid_input")set("guard","fail","rejected");skipRest();
+  log({t,k:good?"ok":a.status==="error"?"bad":"warn",title:`Answer: ${a.status.replace(/_/g," ")}, confidence ${(a.confidence_score||0).toFixed(2)}`,sub:a.short_answer,raw:e});break}
+ case"run_finished":{S.m=e.metrics;skipRest();const m=e.metrics;log({t,title:`Finished in ${fmt(m.latency_ms)}`,sub:`${m.llm_calls} LLM calls · ${m.tool_calls} tool calls · ${(m.prompt_tokens+m.completion_tokens).toLocaleString()} tokens`,raw:e});done();break}
+ case"unhandled_exception":order.forEach(i=>{if(S.stage[i]==="active")S.stage[i]="fail"});log({t,k:"bad",title:"Unexpected error, caught",sub:e.error,raw:e});break;
+ case"result":{const r=e.result;S.plan??=r.plan;S.ev??=(r.sources?{sources:r.sources,rejected:r.rejected,uncovered:[],tool_errors:[]}:null);if(!S.ans){S.ans=r.answer;autoTab("answer")}S.m??=r.metrics;break}}
+}
+function onStart(e){
+ const n=e.span_start,t=e.at_ms;S.spans.push({key:key(e),name:n,start:t,dur:null,ev:e,running:true});
+ if(n==="plan")set("plan","active");if(n==="execute")set("search","active");if(n==="synthesize")set("synth","active");if(n==="ground")set("ground","active");
+ if(n==="llm")S.open[key(e)]=log({t,k:"run",title:`LLM · ${e.purpose}${e.attempt>1?" (repair)":""}`,sub:"waiting…"});
+ if(n==="tool"){set(e.tool==="fetch_page"?"read":"search","active");S.open[key(e)]=log({t,k:"run",title:`${e.tool} ${arg(e.args)}`,sub:"running…"})}
+}
+function onSpan(e){
+ const n=e.span,k=key(e);let sp=S.spans.find(s=>s.key===k&&s.running);if(!sp){sp={key:k,name:n};S.spans.push(sp)}
+ Object.assign(sp,{start:e.start_ms,dur:e.duration_ms,running:false,ev:e});const id=S.open[k];delete S.open[k];const t=e.start_ms+e.duration_ms;
+ if(n==="llm"){const bad=e.status==="invalid_output"||e.status==="error",st=e.purpose==="plan"?"plan":e.purpose==="synthesize"?"synth":null;
+  if(bad&&st)set(st,"warn",e.status==="invalid_output"?"repairing":"error");
+  log({id,t,k:bad?"bad":"ok",title:`LLM · ${e.purpose}${e.attempt>1?" (repair)":""}`,sub:bad?(e.status==="invalid_output"?"Invalid JSON, repairing":String(e.error||"").slice(0,120)):`${e.prompt_tokens??"?"} in / ${e.completion_tokens??"?"} out tokens · ${fmt(e.duration_ms)}`,more:bad?String(e.validation_error||e.error||""):"Validated against the schema before use.",raw:e})}
+ else if(n==="tool"){const st=e.tool==="fetch_page"?"read":"search",bad=e.status&&!["ok","empty"].includes(e.status);S.ts[st][0]++;if(bad){S.ts[st][1]++;set(st,"warn")}
+  log({id,t,k:bad?"bad":"ok",title:`${e.tool} ${arg(e.args)}`,sub:bad?`${e.status} after ${e.attempts} attempt(s)`:`${fmt(e.duration_ms)}${e.n_hits?` · ${e.n_hits} results`:""}`,more:bad?(e.status==="blocked"?"Blocked by URL safety policy.":"The run continues without it."):"",raw:e})}
+ else if(n==="plan"){set("guard","done");set("plan",e.status==="error"?"fail":e.fallback?"warn":"done",e.in_scope===false?"out of scope":`${e.steps} steps`);if(e.in_scope===false)set("plan","warn","out of scope")}
+ else if(n==="execute"){const[sn,sb]=S.ts.search,[rn,rb]=S.ts.read;set("search",S.stage.search==="warn"?"warn":"done",`${sn} calls${sb?`, ${sb} failed`:""}`);
+  set("read",rn?(S.stage.read==="warn"?"warn":"done"):"skipped",rn?`${rn} pages${rb?`, ${rb} failed`:""}`:"");if(!S.ev)set("filter",e.sources?"done":"fail",`${e.sources} kept`)}
+ else if(n==="synthesize")set("synth",e.status==="error"?"fail":S.stage.synth==="warn"?"warn":"done",e.status==="error"?"failed":"");
+ else if(n==="ground")set("ground","done",`${e.findings} findings`);
+}
+function log(o){const id=o.id??++eid;let el=document.getElementById("e"+id);
+ if(!el){el=document.createElement("div");el.id="e"+id;const L=$("#log");L.querySelector(".empty")?.remove();L.appendChild(el);el.onclick=()=>el.classList.toggle("open")}
+ el.className="ev "+(o.k||"")+(el.classList.contains("open")?" open":"");
+ el.innerHTML=`<div class="t">${fmt(o.t)}</div><div class="k"></div><div><div class="ttl">${esc(o.title)}</div>${o.sub?`<div class="sub">${esc(o.sub)}</div>`:""}
+ <div class="more">${o.more?esc(o.more):""}${o.raw?`<pre>${esc(JSON.stringify(o.raw,null,2))}</pre>`:""}</div></div>`;
+ const L=$("#log");L.scrollTop=L.scrollHeight;return id}
+
+function render(){stages();explain();wf();tabs()}
+function stages(){$("#stages").innerHTML=STAGES.map(s=>`<div class="stage ${S.stage[s.id]} ${sel===s.id?"sel":""}" data-id="${s.id}"><div class="dot"></div><div class="nm">${s.n}</div><div class="st">${esc(S.note[s.id]||"")}</div></div>`).join("");
+ document.querySelectorAll(".stage").forEach(el=>el.onclick=()=>{sel=sel===el.dataset.id?null:el.dataset.id;stages();explain()})}
+function cur(){if(sel)return sel;const a=order.filter(i=>S.stage[i]==="active").pop();if(a)return a;return order.filter(i=>!["idle","skipped"].includes(S.stage[i])).pop()||"guard"}
+function explain(){if(!CFG)return;const s=STAGES.find(x=>x.id===cur());const r=runNote(s.id);
+ $("#explain").innerHTML=`<b>${s.n}.</b> ${esc(s.what)} ${s.how(CFG)}${r?`<div class="run">${r}</div>`:""}`}
+function runNote(id){
+ if(id==="plan"&&S.plan)return S.plan.in_scope?`${S.plan.steps.length} steps, intent ${esc(S.plan.intent)}${S.plan.is_fallback?", fallback":""}`:"";
+ if(id==="filter"&&S.ev)return`${S.ev.sources.length} kept, ${S.ev.rejected.length} rejected`;
+ if(id==="ground"&&S.ans)return esc((S.ans.confidence_reasons||[]).join(" · "));
+ if(id==="answer"&&S.ans)return`${esc(S.ans.status)}, confidence ${(S.ans.confidence_score||0).toFixed(2)}`;return""}
+function wf(){
+ const sp=S.spans.filter(s=>s.name==="llm"||(s.name==="tool"&&!s.ev.cached));const cache=S.spans.filter(s=>s.ev?.cached).length;
+ if(!sp.length&&!cache){$("#wf").innerHTML=S.ans?`<div class="dim">No LLM or tool calls: stopped before any spend.</div>`:`<div class="dim">Timeline of LLM and tool calls appears here.</div>`;return}
+ const now=S.live?Math.max(S.t,performance.now()-t0):S.t;const total=Math.max(now,...sp.map(s=>s.start+(s.dur??now-s.start)),1);
+ $("#wf").innerHTML=[...sp].sort((a,b)=>a.start-b.start).map(s=>{const e=s.ev,d=s.dur??Math.max(now-s.start,0);
+  let c=s.name==="llm"?"c-llm":e.tool==="fetch_page"?"c-fetch":"c-tool",l=s.name==="llm"?`llm ${e.purpose}`:`${e.tool==="fetch_page"?"fetch":e.tool} ${arg(e.args)}`;
+  if((e.status&&!["ok","empty"].includes(e.status)))c="c-bad";if(s.running)c="c-run";
+  return`<div class="row"><div class="lab" title="${esc(l)}">${esc(l)}</div><div class="track"><div class="bar ${c}" style="left:${s.start/total*100}%;width:${Math.max(d/total*100,.4)}%"></div></div><div class="ms">${s.running?"…":fmt(d)}</div></div>`}).join("")
+  +(cache?`<div class="row"><div class="lab">${cache} cached call${cache>1?"s":""}</div><div></div><div class="ms">0 ms</div></div>`:"")}
+
+function tabs(){const T=[["plan","Plan"],["sources","Sources"],["answer","Answer"],["metrics","Metrics"]];
+ $("#tabs").innerHTML=T.map(([i,l])=>`<div class="tab ${tab===i?"on":""}" data-t="${i}">${l}</div>`).join("");
+ document.querySelectorAll(".tab").forEach(el=>el.onclick=()=>{tab=el.dataset.t;userTab=true;tabs()});
+ $("#view").innerHTML={plan:vPlan,sources:vSrc,answer:vAns,metrics:vMet}[tab]()}
+function vPlan(){const p=S.plan;if(!p)return`<div class="empty">The plan appears once it passes validation.</div>`;
+ if(!p.in_scope)return`<p class="short">${esc(p.out_of_scope_reason)}</p><div class="dim">Not a research question, so no tools or tokens were spent.</div>`;
+ return`${p.is_fallback?`<div class="status amber">Fallback plan</div>`:""}<table><tr><th>#</th><th>Sub-question</th><th>Tool · query</th></tr>${p.steps.map(s=>`<tr><td class="mono">${s.id}</td><td>${esc(s.sub_question)}</td><td><span class="dim">${esc(s.tool)}</span><div class="mono">${esc(s.query)}</div></td></tr>`).join("")}</table>`}
+function vSrc(){const e=S.ev;if(!e)return`<div class="empty">Sources appear after filtering.</div>`;
+ if(!e.sources.length)return`<div class="empty">No source passed the filter, so the agent won't guess.</div>${rej(e)}`;
+ return`<table><tr><th></th><th>Source</th><th>Score</th></tr>${e.sources.map(s=>{const f=s.flags||[];const note=f.includes("prompt_injection_suspected")?`<div class="dim red">Injected instructions removed</div>`:f.includes("snippet_only")?`<div class="dim">Snippet only</div>`:"";
+  return`<tr><td class="mono">${esc(s.id)}</td><td><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.domain)}</a><div class="dim">${esc(s.domain)}</div>${note}</td><td class="mono">${(s.score||0).toFixed(2)}<div class="bar2"><span style="width:${Math.min(1,s.score||0)*100}%"></span></div></td></tr>`}).join("")}</table>${rej(e)}`}
+const rej=e=>e.rejected.length?`<details><summary>${e.rejected.length} rejected</summary><table>${e.rejected.map(r=>`<tr><td>${esc(host(r.url))}</td><td class="dim">${esc(r.reason)}</td></tr>`).join("")}</table></details>`:"";
+function vAns(){const a=S.ans;if(!a)return`<div class="empty">The answer appears here.</div>`;const src=Object.fromEntries((a.sources||[]).map(s=>[s.id,s]));
+ const col=a.confidence==="high"?"green":a.confidence==="medium"?"amber":"red";
+ return`<div class="status"><b>${esc(a.status.replace(/_/g," ").replace(/^./,c=>c.toUpperCase()))}</b> · confidence <span class="${col}">${(a.confidence_score||0).toFixed(2)} ${esc(a.confidence)}</span></div>
+ <p class="short">${esc(a.short_answer)}</p>
+ ${a.key_findings.length?`<ol class="f">${a.key_findings.map(f=>`<li>${esc(f.statement)}${f.source_ids.map(i=>`<sup title="${esc(src[i]?.title||"")}">${esc(i)}</sup>`).join("")}${f.support==="weak"?` <span class="dim amber">weak support</span>`:""}</li>`).join("")}</ol>`:""}
+ ${a.confidence_reasons?.length?`<div class="h">Why this confidence</div><ul class="dim">${a.confidence_reasons.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>`:""}
+ ${a.limitations?.length?`<details><summary>Limitations (${a.limitations.length})</summary><ul class="dim">${a.limitations.map(r=>`<li>${esc(r)}</li>`).join("")}</ul></details>`:""}
+ ${a.sources?.length?`<details><summary>Sources (${a.sources.length})</summary><table>${a.sources.map(s=>`<tr><td class="mono">${esc(s.id)}</td><td><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a></td></tr>`).join("")}</table></details>`:""}`}
+function vMet(){const m=S.m;if(!m)return`<div class="empty">Metrics appear when the run finishes.</div>`;const k=(v,l)=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+ return`<div class="kpis">${k(fmt(m.latency_ms),"Latency")}${k(m.llm_calls,"LLM calls")}${k((m.prompt_tokens+m.completion_tokens).toLocaleString(),"Tokens")}${k("$"+m.est_cost_usd,"Est. cost")}${k(`${m.tool_calls}`,`Tool calls${m.tool_failures?`, ${m.tool_failures} failed`:""}`)}${k(`${m.sources_used}/${m.sources_considered}`,"Sources used")}</div>
+ <details><summary>Raw trace (${S.raw.length} records)</summary><pre class="mono" style="white-space:pre-wrap;font-size:11px;background:var(--soft);padding:10px;border-radius:8px;max-height:360px;overflow:auto">${esc(S.raw.map(r=>JSON.stringify(r)).join("\n"))}</pre></details>`}
+
+async function run(){stop();reset();const f=$("#fault").value;$("#go").disabled=true;let r;
+ try{r=await fetch("/api/runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({question:$("#q").value,faults:f?[f]:[],use_cache:$("#cache").checked})})}catch{return err("Can't reach the server.")}
+ if(!r.ok)return err(await r.text());const{run_id}=await r.json();S.live=true;t0=performance.now();tick=setInterval(wf,250);
+ es=new EventSource(`/api/runs/${run_id}/stream`);es.onmessage=m=>handle(JSON.parse(m.data));es.addEventListener("done",()=>{done();runs()});es.onerror=()=>S.live&&done()}
+function done(){S.live=false;es?.close();es=null;clearInterval(tick);$("#go").disabled=false;render()}
+function err(m){$("#go").disabled=false;const b=$("#banner");b.textContent=m;b.style.display="block"}
+function stop(){es?.close();es=null;clearInterval(tick);clearTimeout(timer)}
+async function runs(){const R=await(await fetch("/api/runs")).json();
+ $("#replay").innerHTML=`<option value="">${R.length?"Saved run…":"None yet"}</option>`+R.map(r=>`<option value="${esc(r.run_id)}">${esc((r.question||"(blank)").trim().slice(0,42)||"(blank)")} · ${esc(r.status||"?")}</option>`).join("")}
+async function replay(id){if(!id)return;stop();reset();const d=await(await fetch(`/api/runs/${id}/trace`)).json();
+ if(d.events[0]?.question!==undefined)$("#q").value=d.events[0].question;const ev=[];
+ for(const e of d.events){if(e.span){const{span,...a}=e;ev.push({...a,span_start:span,at_ms:e.start_ms,_t:e.start_ms})}ev.push({...e,_t:e.at_ms??e.start_ms+e.duration_ms})}
+ if(d.result)ev.push({event:"result",result:d.result,_t:Infinity});ev.sort((a,b)=>a._t-b._t);
+ const last=Math.max(...ev.filter(e=>isFinite(e._t)).map(e=>e._t),1),sc=Math.min(1,9000/last);let i=0;
+ const step=()=>{if(i>=ev.length)return;const{_t,...e}=ev[i++];handle(e);const n=ev[i];if(!n)return;timer=setTimeout(step,Math.min(isFinite(n._t)?Math.max((n._t-_t)*sc,60):60,1500))};step()}
+
+async function boot(){CFG=await(await fetch("/api/config")).json();
+ $("#cfg").textContent=`${CFG.model} · ${CFG.search} · ${CFG.budgets.max_tool_calls} tool calls max · ${CFG.budgets.run_deadline_s}s deadline`;
+ if(!CFG.llm_ready)err("LLM not configured in .env. Replay still works.");
+ $("#sample").innerHTML=`<option value="">Choose…</option>`+SAMPLES.map(([l],i)=>`<option value="${i}">${esc(l)}</option>`).join("");
+ $("#sample").onchange=e=>{if(e.target.value!=="")$("#q").value=SAMPLES[e.target.value][1]};
+ $("#fault").innerHTML+=CFG.faults.map(f=>`<option value="${esc(f)}">${esc(FAULT_LABEL[f]||f)}</option>`).join("");
+ $("#replay").onchange=e=>replay(e.target.value);
+ $("#go").onclick=run;$("#q").onkeydown=e=>{if(e.key==="Enter")run()};reset();runs()}
+boot();
+</script>
+</body>
+</html>
