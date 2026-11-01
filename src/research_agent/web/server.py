@@ -96,7 +96,7 @@ def start_run(req: RunRequest) -> dict:
     if bad:
         raise HTTPException(400, f"unknown fault(s): {bad}")
     settings = Settings.from_env()
-    settings.faults = set(req.faults)
+    settings.faults = list(req.faults)
     settings.use_cache = req.use_cache
     sink: "queue.Queue[Any]" = queue.Queue()
     tracer = LiveTracer(sink, runs_dir=settings.runs_dir, price_in=settings.price_in_per_m, price_out=settings.price_out_per_m)
@@ -144,10 +144,10 @@ def list_runs(limit: int = 30) -> list[dict]:
     runs_dir = Settings.from_env().runs_dir
     out = []
     for path in sorted(glob.glob(os.path.join(runs_dir, "*.jsonl")), reverse=True)[:limit]:
-        q, status, conf, ms = "", "", "", None
+        q, status, conf, ms, started = "", "", "", None, False
         for rec in _read_jsonl(path):
             if rec.get("event") == "run_started":
-                q = rec.get("question", "")
+                q, started = rec.get("question", ""), True
             elif rec.get("event") == "answer_ready":
                 status = rec["answer"].get("status", "")
                 conf = rec["answer"].get("confidence", "")
@@ -155,6 +155,8 @@ def list_runs(limit: int = 30) -> list[dict]:
                 status, conf = status or rec.get("status", ""), conf or rec.get("confidence", "")
             elif rec.get("event") == "run_finished":
                 ms = rec.get("metrics", {}).get("latency_ms")
+        if not started:  # partial traces written by unit tests are not replayable runs
+            continue
         out.append({"run_id": os.path.basename(path)[:-6], "question": q, "status": status, "confidence": conf, "latency_ms": ms})
     return out
 

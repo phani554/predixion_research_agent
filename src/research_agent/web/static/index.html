@@ -43,7 +43,7 @@ select{font:inherit;font-size:12.5px;color:var(--ink);border:1px solid var(--lin
 @keyframes pulse{50%{box-shadow:0 0 0 7px #dbe6fd00}}
 .explain{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:13.5px;color:#404040}
 .explain b{color:var(--ink)}
-.explain .run{margin-top:4px;font-family:var(--mono);font-size:12px;color:var(--mute)}
+.xh{display:flex;gap:8px;align-items:baseline;margin-bottom:6px}.xh b{font-size:13.5px}.xl{list-style:none;padding:0;margin:0}.xl li{padding:3px 0;font-size:13px;color:#262626}.xl .dim{margin-left:6px}
 /* timeline */
 .wf{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .row{display:grid;grid-template-columns:200px 1fr 56px;gap:12px;align-items:center;height:20px;font-size:12px}
@@ -120,7 +120,7 @@ details{margin-top:12px}summary{font-size:12.5px;color:var(--mute);cursor:pointe
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const fmt=ms=>ms==null?"":ms<1000?`${ms} ms`:`${(ms/1000).toFixed(ms<10000?1:0)} s`;
+const fmt=ms=>ms==null?"":ms<1000?`${Math.round(ms)} ms`:`${(ms/1000).toFixed(ms<10000?1:0)} s`;
 const host=u=>{try{return new URL(u).hostname.replace(/^www\./,"")}catch{return u}};
 
 const SAMPLES=[
@@ -134,18 +134,18 @@ const FAULT_LABEL={"web_search:timeout":"Search times out","web_search:error":"S
  "fetch_page:injection":"Poisoned page (prompt injection)","wikipedia:error":"Wikipedia errors","llm:malformed":"LLM returns bad JSON","llm:down":"LLM is down"};
 
 const STAGES=[
- {id:"guard",n:"Guard",what:"Validates the question.",how:c=>`Code, no LLM: ${c.guard.min_chars}–${c.guard.max_chars} characters, else stop at zero cost.`},
- {id:"plan",n:"Plan",what:"Splits the question into sub-questions, each with one tool and query.",how:c=>`One LLM call, output validated by Pydantic. One repair retry, then a rule-based fallback.`},
- {id:"search",n:"Search",what:"Runs the planned tool calls.",how:c=>`${c.budgets.parallelism} in parallel, ${c.budgets.tool_timeout_s}s timeout, ${c.budgets.tool_max_retries} retries, cached. Budget ${c.budgets.max_tool_calls} calls.`},
- {id:"read",n:"Read",what:"Fetches the most relevant pages.",how:c=>`Up to ${c.budgets.max_pages_to_fetch} pages, spread across sub-questions. Private addresses blocked; a failed fetch keeps the snippet.`},
- {id:"filter",n:"Filter",what:"Keeps only reliable, relevant sources.",how:c=>`Score = relevance, domain quality, depth. Injected instructions stripped. Min ${c.filter.min_source_score}, max ${c.filter.max_sources_per_domain} per domain.`},
- {id:"synth",n:"Synthesize",what:"Writes the answer from the kept sources only.",how:c=>`One LLM call; every finding must cite a source id.`},
- {id:"ground",n:"Ground",what:"Checks citations and scores confidence.",how:c=>`Code, not the model: drops uncited claims, flags weak support, scores from the evidence.`},
- {id:"answer",n:"Answer",what:"Returns a structured, cited result.",how:c=>`Status, findings, sources, confidence with reasons, limitations.`}];
+ {id:"guard",n:"Guard",what:"checks the question is valid"},
+ {id:"plan",n:"Plan",what:"breaks the question into sub-questions"},
+ {id:"search",n:"Search",what:"the searches it ran"},
+ {id:"read",n:"Read",what:"the pages it opened"},
+ {id:"filter",n:"Filter",what:"which sources it kept and why"},
+ {id:"synth",n:"Synthesize",what:"what it wrote the answer from"},
+ {id:"ground",n:"Ground",what:"how it checked the citations"},
+ {id:"answer",n:"Answer",what:"the final result"}];
 const order=STAGES.map(s=>s.id);
 
 let CFG,S,es,timer,tick,t0,sel=null,tab="answer",userTab=false,eid=0;
-function reset(){S={stage:{},note:{},spans:[],open:{},plan:null,ev:null,ans:null,m:null,raw:[],t:0,live:false,ts:{search:[0,0],read:[0,0]}};
+function reset(){S={tok:{},base:null,q:"",stage:{},note:{},spans:[],open:{},plan:null,ev:null,ans:null,m:null,raw:[],t:0,live:false,ts:{search:[0,0],read:[0,0]}};
  order.forEach(i=>S.stage[i]="idle");sel=null;userTab=false;tab="plan";$("#log").innerHTML="";$("#banner").style.display="none";render();}
 function set(id,st,note){const c=S.stage[id];if(c==="fail"&&st!=="fail")return;if(c==="warn"&&st==="done"){if(note)S.note[id]=note;return}
  S.stage[id]=st;if(note!==undefined)S.note[id]=note;if(st==="active")order.slice(0,order.indexOf(id)).forEach(p=>{if(S.stage[p]==="active")S.stage[p]="done"});}
@@ -154,15 +154,26 @@ const arg=a=>!a?"":a.query?`“${String(a.query).slice(0,60)}”`:a.url?host(a.u
 const key=e=>{const n=e.span_start||e.span;return n==="tool"?`tool|${e.tool}|${JSON.stringify(e.args)}`:n==="llm"?`llm|${e.purpose}|${e.attempt}`:n};
 const autoTab=t=>{if(!userTab)tab=t};
 
+const PURP={planning:"plan",synthesis:"synthesize"};
+function norm(e){e={...e};const abs=v=>v!=null&&v>1e11,first=e.at_ms??e.timestamp_ms??e.start_ms;
+ if(S.base==null&&abs(first))S.base=first;
+ if(e.at_ms==null&&e.timestamp_ms!=null)e.at_ms=e.timestamp_ms;
+ if(abs(e.at_ms))e.at_ms-=S.base;if(abs(e.start_ms))e.start_ms-=S.base;
+ if(PURP[e.purpose])e.purpose=PURP[e.purpose];
+ if(e.event==="follow_up_round"&&!e.steps)e.steps=(e.uncovered_steps||[]).map(i=>({query:`step ${i}`}));return e}
 function handle(e){
- S.raw.push(e);const t=e.at_ms??((e.start_ms??0)+(e.duration_ms??0));S.t=Math.max(S.t,t);
+ S.raw.push(e);e=norm(e);
+ if(e.event==="tool_invocation")return;
+ if(e.event==="llm_completion"){const k=S.tok[e.purpose]||(S.tok[e.purpose]=[0,0]);k[0]+=e.prompt_tokens||0;k[1]+=e.completion_tokens||0;return}
+ const t=e.at_ms??((e.start_ms??0)+(e.duration_ms??0));S.t=Math.max(S.t,t);
  if(e.span_start)onStart(e);else if(e.span)onSpan(e);else onEvent(e,t);render();}
 
 function onEvent(e,t){
  switch(e.event){
- case"run_started":set("guard","active");log({t,title:"Run started",sub:e.question.trim()?e.question:"(empty)",more:e.faults?.length?`Failure test: ${e.faults.map(f=>FAULT_LABEL[f]||f).join(", ")}`:"",raw:e});break;
+ case"run_started":S.q=e.question||"";set("guard","active");log({t,title:"Run started",sub:e.question.trim()?e.question:"(empty)",more:Array.isArray(e.faults)&&e.faults.length?`Failure test: ${e.faults.map(f=>FAULT_LABEL[f]||f).join(", ")}`:"",raw:e});break;
+ case"invalid_output":{const st=e.purpose==="plan"?"plan":"synth";set(st,"warn","repairing");log({t,k:"warn",title:`LLM · ${e.purpose}: invalid JSON`,sub:"Asking the model once more to fix it",more:String(e.error||""),raw:e});break}
  case"planner_fallback":set("plan","warn","fallback");log({t,k:"warn",title:"Planner used fallback plan",sub:e.reason,raw:e});break;
- case"plan_ready":{S.plan=e.plan;autoTab("plan");const p=e.plan;
+ case"plan_ready":{S.plan=e.plan;autoTab("plan");const p=e.plan;set("guard","done");set("plan",p.is_fallback?"warn":"done",p.in_scope?`${p.steps.length} steps`:"out of scope");if(!p.in_scope)set("plan","warn","out of scope");
   log({t,k:"ok",title:p.in_scope?`Plan: ${p.steps.length} sub-questions`:"Out of scope",sub:p.in_scope?p.steps.map(s=>s.query).join(" · "):p.out_of_scope_reason,raw:e});break}
  case"tool_cache_hit":{const st=e.tool==="fetch_page"?"read":"search";set(st,"active");S.ts[st][0]++;
   S.spans.push({key:"c"+(++eid),name:"tool",start:t,dur:0,ev:{...e,status:"ok",cached:true}});S.cache=(S.cache||[]);S.cache.push(arg(e.args));S.cacheId=log({id:S.cacheId,t,k:"ok",title:`${S.cache.length} cached tool call${S.cache.length>1?"s":""}`,sub:S.cache.join(" · "),more:"Served from the 24h cache: no network call.",raw:e});break}
@@ -170,7 +181,7 @@ function onEvent(e,t){
  case"evidence_ready":{S.ev=e;autoTab("sources");const n=e.sources.length,inj=e.sources.filter(s=>s.flags.includes("prompt_injection_suspected")).length;
   set("filter",n?(inj||e.uncovered.length?"warn":"done"):"fail",`${n} kept`);
   log({t,k:n?(inj?"warn":"ok"):"bad",title:`Kept ${n} sources, rejected ${e.rejected.length}`,sub:inj?`${inj} had injected instructions removed`:e.uncovered.length?`Uncovered: step ${e.uncovered.join(", ")}`:"",raw:e});break}
- case"answer_ready":{S.ans=e.answer;autoTab("answer");const a=e.answer,good=a.status==="answered";
+ case"answer_ready":{S.ans=e.answer;autoTab("answer");const a=e.answer,good=a.status==="answered";if(S.stage.ground!=="idle")S.note.ground=`${a.key_findings.length} findings`;
   set("answer",good?"done":a.status==="error"?"fail":"warn",a.status.replace("_"," "));if(a.status==="invalid_input")set("guard","fail","rejected");skipRest();
   log({t,k:good?"ok":a.status==="error"?"bad":"warn",title:`Answer: ${a.status.replace(/_/g," ")}, confidence ${(a.confidence_score||0).toFixed(2)}`,sub:a.short_answer,raw:e});break}
  case"run_finished":{S.m=e.metrics;skipRest();const m=e.metrics;log({t,title:`Finished in ${fmt(m.latency_ms)}`,sub:`${m.llm_calls} LLM calls · ${m.tool_calls} tool calls · ${(m.prompt_tokens+m.completion_tokens).toLocaleString()} tokens`,raw:e});done();break}
@@ -185,17 +196,20 @@ function onStart(e){
 }
 function onSpan(e){
  const n=e.span,k=key(e);let sp=S.spans.find(s=>s.key===k&&s.running);if(!sp){sp={key:k,name:n};S.spans.push(sp)}
- Object.assign(sp,{start:e.start_ms,dur:e.duration_ms,running:false,ev:e});const id=S.open[k];delete S.open[k];const t=e.start_ms+e.duration_ms;
+ const id=S.open[k];delete S.open[k];
+ if(n==="tool"&&e.cached){if(id)document.getElementById("e"+id)?.remove();S.spans=S.spans.filter(x=>x!==sp);return}
+ if(n==="llm"&&e.prompt_tokens==null&&S.tok[e.purpose]){[e.prompt_tokens,e.completion_tokens]=S.tok[e.purpose];delete S.tok[e.purpose]}
+ Object.assign(sp,{start:e.start_ms,dur:e.duration_ms,running:false,ev:e});const t=e.start_ms+e.duration_ms;
  if(n==="llm"){const bad=e.status==="invalid_output"||e.status==="error",st=e.purpose==="plan"?"plan":e.purpose==="synthesize"?"synth":null;
   if(bad&&st)set(st,"warn",e.status==="invalid_output"?"repairing":"error");
   log({id,t,k:bad?"bad":"ok",title:`LLM · ${e.purpose}${e.attempt>1?" (repair)":""}`,sub:bad?(e.status==="invalid_output"?"Invalid JSON, repairing":String(e.error||"").slice(0,120)):`${e.prompt_tokens??"?"} in / ${e.completion_tokens??"?"} out tokens · ${fmt(e.duration_ms)}`,more:bad?String(e.validation_error||e.error||""):"Validated against the schema before use.",raw:e})}
  else if(n==="tool"){const st=e.tool==="fetch_page"?"read":"search",bad=e.status&&!["ok","empty"].includes(e.status);S.ts[st][0]++;if(bad){S.ts[st][1]++;set(st,"warn")}
   log({id,t,k:bad?"bad":"ok",title:`${e.tool} ${arg(e.args)}`,sub:bad?`${e.status} after ${e.attempts} attempt(s)`:`${fmt(e.duration_ms)}${e.n_hits?` · ${e.n_hits} results`:""}`,more:bad?(e.status==="blocked"?"Blocked by URL safety policy.":"The run continues without it."):"",raw:e})}
- else if(n==="plan"){set("guard","done");set("plan",e.status==="error"?"fail":e.fallback?"warn":"done",e.in_scope===false?"out of scope":`${e.steps} steps`);if(e.in_scope===false)set("plan","warn","out of scope")}
- else if(n==="execute"){const[sn,sb]=S.ts.search,[rn,rb]=S.ts.read;set("search",S.stage.search==="warn"?"warn":"done",`${sn} calls${sb?`, ${sb} failed`:""}`);
-  set("read",rn?(S.stage.read==="warn"?"warn":"done"):"skipped",rn?`${rn} pages${rb?`, ${rb} failed`:""}`:"");if(!S.ev)set("filter",e.sources?"done":"fail",`${e.sources} kept`)}
+ else if(n==="plan"){set("guard","done");if(e.status==="error")set("plan","fail","failed");else if(e.steps!=null)set("plan",e.fallback?"warn":"done",e.in_scope===false?"out of scope":`${e.steps} steps`)}
+ else if(n==="execute"){const[sn,sb]=S.ts.search,[rn,rb]=S.ts.read;set("search",sb?"warn":"done",`${sn} calls${sb?`, ${sb} failed`:""}`);
+  set("read",rn?(rb?"warn":"done"):"skipped",rn?`${rn} pages${rb?`, ${rb} failed`:""}`:"");if(!S.ev&&e.sources!=null)set("filter",e.sources?"done":"fail",`${e.sources} kept`)}
  else if(n==="synthesize")set("synth",e.status==="error"?"fail":S.stage.synth==="warn"?"warn":"done",e.status==="error"?"failed":"");
- else if(n==="ground")set("ground","done",`${e.findings} findings`);
+ else if(n==="ground")set("ground","done",e.findings!=null?`${e.findings} findings`:"");
 }
 function log(o){const id=o.id??++eid;let el=document.getElementById("e"+id);
  if(!el){el=document.createElement("div");el.id="e"+id;const L=$("#log");L.querySelector(".empty")?.remove();L.appendChild(el);el.onclick=()=>el.classList.toggle("open")}
@@ -208,13 +222,29 @@ function render(){stages();explain();wf();tabs()}
 function stages(){$("#stages").innerHTML=STAGES.map(s=>`<div class="stage ${S.stage[s.id]} ${sel===s.id?"sel":""}" data-id="${s.id}"><div class="dot"></div><div class="nm">${s.n}</div><div class="st">${esc(S.note[s.id]||"")}</div></div>`).join("");
  document.querySelectorAll(".stage").forEach(el=>el.onclick=()=>{sel=sel===el.dataset.id?null:el.dataset.id;stages();explain()})}
 function cur(){if(sel)return sel;const a=order.filter(i=>S.stage[i]==="active").pop();if(a)return a;return order.filter(i=>!["idle","skipped"].includes(S.stage[i])).pop()||"guard"}
-function explain(){if(!CFG)return;const s=STAGES.find(x=>x.id===cur());const r=runNote(s.id);
- $("#explain").innerHTML=`<b>${s.n}.</b> ${esc(s.what)} ${s.how(CFG)}${r?`<div class="run">${r}</div>`:""}`}
-function runNote(id){
- if(id==="plan"&&S.plan)return S.plan.in_scope?`${S.plan.steps.length} steps, intent ${esc(S.plan.intent)}${S.plan.is_fallback?", fallback":""}`:"";
- if(id==="filter"&&S.ev)return`${S.ev.sources.length} kept, ${S.ev.rejected.length} rejected`;
- if(id==="ground"&&S.ans)return esc((S.ans.confidence_reasons||[]).join(" · "));
- if(id==="answer"&&S.ans)return`${esc(S.ans.status)}, confidence ${(S.ans.confidence_score||0).toFixed(2)}`;return""}
+function explain(){const id=cur(),s=STAGES.find(x=>x.id===id),st=S.stage[id],b=detail(id);
+ $("#explain").innerHTML=`<div class="xh"><b>${s.n}</b><span class="dim">${esc(s.what)}</span></div>${b||`<div class="dim">${st==="skipped"?"Skipped in this run.":st==="idle"?"Not reached yet.":"Working…"}</div>`}`}
+const li=(a,d,c="")=>`<li class="${c}">${a}${d?`<span class="dim">${d}</span>`:""}</li>`;
+const ul=x=>x.length?`<ul class="xl">${x.slice(0,8).join("")}${x.length>8?`<li class="dim">+${x.length-8} more</li>`:""}</ul>`:"";
+function tools(read){return S.spans.filter(x=>x.name==="tool"&&((x.ev.tool==="fetch_page")===read)).sort((a,b)=>a.start-b.start)}
+function tstat(x){const e=x.ev;if(x.running)return"running…";if(e.cached)return"cached";if(e.status&&!["ok","empty"].includes(e.status))return`<span class="red">${esc(e.status)}${e.error?`: ${esc(String(e.error).slice(0,60))}`:""}</span>`;return`${e.status==="empty"?"no results · ":""}${fmt(x.dur)}`}
+function detail(id){const p=S.plan,ev=S.ev,a=S.ans;
+ if(id==="guard"){if(!S.raw.length)return"";const q=S.q.trim();
+  if(a?.status==="invalid_input")return ul([li(`Rejected: ${esc(a.short_answer)}`,"","red"),li(`Got “${esc(S.q)}”`,`${S.q.length} characters`)]);
+  return S.stage.guard==="idle"?"":ul([li(`“${esc(q)}”`,`${q.length} characters, accepted`)])}
+ if(id==="plan"&&p){if(!p.in_scope)return ul([li(esc(p.out_of_scope_reason||"Out of scope"),"","amber")]);
+  return`<div style="margin-bottom:6px">Understood as: ${esc(p.restated_question||S.q)}</div>`+ul(p.steps.map(x=>li(`${x.id}. ${esc(x.sub_question)}`,`${esc(x.tool)} “${esc(x.query)}”`)))}
+ if(id==="search"){const x=tools(false);return ul(x.map(y=>li(`${esc(y.ev.tool)} ${esc(arg(y.ev.args))}`,tstat(y))))}
+ if(id==="read"){const x=tools(true);return ul(x.map(y=>li(esc(host(y.ev.args?.url||"")),tstat(y))))}
+ if(id==="filter"&&ev){const inj=ev.sources.filter(x=>(x.flags||[]).includes("prompt_injection_suspected")).length;
+  return`<div style="margin-bottom:6px">Kept ${ev.sources.length} of ${ev.sources.length+ev.rejected.length}${inj?`, <span class="red">${inj} had injected instructions removed</span>`:""}</div>`+
+  ul([...ev.sources.map(x=>li(`${esc(x.id)} ${esc(x.domain)}`,`score ${(x.score||0).toFixed(2)}`)),...ev.rejected.map(r=>li(`<span class="dim" style="margin:0">✕</span> ${esc(host(r.url))}`,esc(r.reason)))])}
+ if(id==="synth"){const l=S.spans.find(x=>x.name==="llm"&&x.ev.purpose==="synthesize"&&!x.running);if(!ev&&!l)return"";
+  return ul([ev?li(`Only from ${ev.sources.length} kept sources`,ev.sources.map(x=>x.id).join(", ")):"",l?li(`One LLM call`,`${l.ev.prompt_tokens??"?"} in / ${l.ev.completion_tokens??"?"} out tokens · ${fmt(l.dur)}`):""].filter(Boolean))}
+ if(id==="ground"&&a&&a.status!=="invalid_input"){const w=a.key_findings.filter(f=>f.support==="weak").length;
+  return ul([li(`${a.key_findings.length} findings, each cites a kept source`,w?`${w} marked weak`:""),...(a.confidence_reasons||[]).map(r=>li(esc(r)))])}
+ if(id==="answer"&&a)return ul([li(`${esc(a.status.replace(/_/g," "))}, confidence ${(a.confidence_score||0).toFixed(2)} ${esc(a.confidence)}`),li(esc(a.short_answer.slice(0,220))+(a.short_answer.length>220?"…":""))]);
+ return""}
 function wf(){
  const sp=S.spans.filter(s=>s.name==="llm"||(s.name==="tool"&&!s.ev.cached));const cache=S.spans.filter(s=>s.ev?.cached).length;
  if(!sp.length&&!cache){$("#wf").innerHTML=S.ans?`<div class="dim">No LLM or tool calls: stopped before any spend.</div>`:`<div class="dim">Timeline of LLM and tool calls appears here.</div>`;return}
@@ -250,7 +280,7 @@ function vMet(){const m=S.m;if(!m)return`<div class="empty">Metrics appear when 
  <details><summary>Raw trace (${S.raw.length} records)</summary><pre class="mono" style="white-space:pre-wrap;font-size:11px;background:var(--soft);padding:10px;border-radius:8px;max-height:360px;overflow:auto">${esc(S.raw.map(r=>JSON.stringify(r)).join("\n"))}</pre></details>`}
 
 async function run(){stop();reset();const f=$("#fault").value;$("#go").disabled=true;let r;
- try{r=await fetch("/api/runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({question:$("#q").value,faults:f?[f]:[],use_cache:$("#cache").checked})})}catch{return err("Can't reach the server.")}
+ try{r=await fetch("/api/runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({question:$("#q").value,faults:f?[f]:[],use_cache:f?false:$("#cache").checked})})}catch{return err("Can't reach the server.")}
  if(!r.ok)return err(await r.text());const{run_id}=await r.json();S.live=true;t0=performance.now();tick=setInterval(wf,250);
  es=new EventSource(`/api/runs/${run_id}/stream`);es.onmessage=m=>handle(JSON.parse(m.data));es.addEventListener("done",()=>{done();runs()});es.onerror=()=>S.live&&done()}
 function done(){S.live=false;es?.close();es=null;clearInterval(tick);$("#go").disabled=false;render()}
@@ -260,9 +290,9 @@ async function runs(){const R=await(await fetch("/api/runs")).json();
  $("#replay").innerHTML=`<option value="">${R.length?"Saved run…":"None yet"}</option>`+R.map(r=>`<option value="${esc(r.run_id)}">${esc((r.question||"(blank)").trim().slice(0,42)||"(blank)")} · ${esc(r.status||"?")}</option>`).join("")}
 async function replay(id){if(!id)return;stop();reset();const d=await(await fetch(`/api/runs/${id}/trace`)).json();
  if(d.events[0]?.question!==undefined)$("#q").value=d.events[0].question;const ev=[];
- for(const e of d.events){if(e.span){const{span,...a}=e;ev.push({...a,span_start:span,at_ms:e.start_ms,_t:e.start_ms})}ev.push({...e,_t:e.at_ms??e.start_ms+e.duration_ms})}
+ for(const e of d.events){if(e.span){const{span,...a}=e;ev.push({...a,span_start:span,at_ms:e.start_ms,_t:e.start_ms})}ev.push({...e,_t:e.at_ms??e.timestamp_ms??e.start_ms+e.duration_ms})}
  if(d.result)ev.push({event:"result",result:d.result,_t:Infinity});ev.sort((a,b)=>a._t-b._t);
- const last=Math.max(...ev.filter(e=>isFinite(e._t)).map(e=>e._t),1),sc=Math.min(1,9000/last);let i=0;
+ const ts=ev.filter(e=>isFinite(e._t)).map(e=>e._t),last=Math.max(Math.max(...ts)-Math.min(...ts),1),sc=Math.min(1,9000/last);let i=0;
  const step=()=>{if(i>=ev.length)return;const{_t,...e}=ev[i++];handle(e);const n=ev[i];if(!n)return;timer=setTimeout(step,Math.min(isFinite(n._t)?Math.max((n._t-_t)*sc,60):60,1500))};step()}
 
 async function boot(){CFG=await(await fetch("/api/config")).json();
