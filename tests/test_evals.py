@@ -155,3 +155,22 @@ def test_report_generates_markdown_table() -> None:
     assert "| case-1 | happy_path | PASS | answered | high (0.90) | 2 (0) | 2 | 1.50s | 0 |" in md
     assert "| case-2 | failure | FAIL | error | low (0.00) | 0 (0) | 0 | 0.50s | 1 | tool failed |" in md
 
+
+def test_evaluation_summary_exists_and_contains_results() -> None:
+    eval_doc = Path("docs/EVALUATION.md")
+    assert eval_doc.is_file(), "docs/EVALUATION.md must exist"
+
+    content = eval_doc.read_text(encoding="utf-8")
+    assert "Evaluation" in content
+    assert "| ID |" in content or "| Category |" in content
+    assert "happy_path" in content or "vector-dbs" in content
+
+    # Check results folder has files
+    results_dir = Path("evals/results")
+    assert results_dir.is_dir()
+    json_results = list(results_dir.glob("*.json"))
+    md_results = list(results_dir.glob("*.md"))
+    assert len(json_results) >= 1, "Expected at least one saved JSON result in evals/results/"
+    assert len(md_results) >= 1, "Expected at least one saved Markdown report in evals/results/"
+
+

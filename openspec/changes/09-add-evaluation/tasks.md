@@ -8,4 +8,4 @@
 - [ ] 2.1 Add `baseline.py` and `--baseline`; verify: run on `fictional-entities` and see both answers in the JSON
 
 ## 3. Run it
-- [ ] 3.1 Run the full suite on the real model, keep the result files; verify: results committed under `evals/results/` and summarised in `docs/EVALUATION.md`
+- [x] 3.1 Run the full suite on the real model, keep the result files; verify: results committed under `evals/results/` and summarised in `docs/EVALUATION.md`

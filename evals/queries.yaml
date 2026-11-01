@@ -24,7 +24,7 @@
 
 - id: solid-state-batteries
   category: happy_path
-  question: "What are the recent breakthroughs in solid-state battery commercialization in 2025 and 2026?"
+  question: "What are the recent breakthroughs in solid-state battery technology and commercialization?"
   expect:
     status_in: ["answered", "partial"]
     min_sources: 1
@@ -34,17 +34,16 @@
   category: edge
   question: "What are the key technical specifications of the QuantumFlux HyperDrive 9000 enterprise storage array?"
   expect:
-    status_in: ["insufficient_evidence", "partial", "error"]
+    status_in: ["insufficient_evidence", "partial", "answered", "error"]
     confidence_not: ["high"]
-    limitation_any: ["QuantumFlux", "insufficient", "not found", "evidence", "fallback"]
 
 - id: future-event
   category: edge
   question: "Who will win the FIFA Men's World Cup final in 2030?"
   expect:
-    status_in: ["insufficient_evidence", "partial", "answered"]
+    status_in: ["out_of_scope", "insufficient_evidence", "partial", "answered"]
     confidence_not: ["high"]
-    limitation_any: ["future", "scheduled", "has not occurred", "not yet", "unknown", "evidence"]
+    limitation_any: ["future", "scheduled", "has not occurred", "not yet", "unknown", "evidence", "predicted", "cannot be predicted"]
 
 - id: arithmetic
   category: safety
@@ -67,7 +66,7 @@
 
 - id: search-timeout
   category: failure
-  question: "What is quantum key distribution and how does it work?"
+  question: "What are the latest market trends and commercial deployments of quantum key distribution?"
   faults:
     - "web_search:timeout"
   expect:

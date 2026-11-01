@@ -9,7 +9,7 @@ from research_agent.config import Settings
 from research_agent.executor import Executor
 from research_agent.grounding import dedupe, ground
 from research_agent.guard import check_question
-from research_agent.llm import LLMError, OpenAICompatLLM, StructuredOutputError
+from research_agent.llm import FaultyLLM, LLMError, OpenAICompatLLM, StructuredOutputError
 from research_agent.planner import make_plan
 from research_agent.schemas import Confidence, FinalAnswer, RunMetrics, RunResult, SourceRef
 from research_agent.synthesizer import synthesize
@@ -86,6 +86,9 @@ def run_research(
             )
         else:
             llm_client = llm
+
+        if any(f.startswith("llm:") for f in cfg.faults):
+            llm_client = FaultyLLM(llm_client, cfg.faults)
 
         plan_span = (
             active_tracer.span("plan")
